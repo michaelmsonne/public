@@ -1,7 +1,7 @@
 # Blog
-Repository of scripts and so on from my blog [https://blog.sonnes.cloud/](https://blog.sonnes.cloud/)
+Repository of scripts and so on from my blog <a href="https://blog.sonnes.cloud/" target="_blank">https://blog.sonnes.cloud/</a>
 
-These are linked from individual blog posts over on [https:/blog.sonnes.cloud/](https://blog.sonnes.cloud/)
+These are linked from individual blog posts over on <a href="https://blog.sonnes.cloud/" target="_blank">https://blog.sonnes.cloud/</a>
 
 All scripts are provided here for use at your own risk, with no warranty provided.
 
