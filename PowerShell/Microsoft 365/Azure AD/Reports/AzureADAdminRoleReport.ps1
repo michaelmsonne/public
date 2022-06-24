@@ -1,13 +1,13 @@
 ﻿<#  
     .NOTES
     ===========================================================================
-     Created with:  Microsoft Visual Studio 2022
-     Created on:    09-12-2021 07:32
-	 Updated on:    21-12-2021 12:34
-     Created by:    Michael Morten Sonne
-     Organization:  
-	 Name:          Azure Admin Report
-     Filename:      AzureADAdminRoleReport.ps1
+	Created with:  Microsoft Visual Studio 2022
+	Created on:    09-12-2021 07:32
+	Updated on:    21-12-2021 12:34
+	Created by:    Michael Morten Sonne
+	Organization:  
+	Name:          Azure Admin Report
+	Filename:      AzureADAdminRoleReport.ps1
     ===========================================================================
     .DESCRIPTION
         This script exports Microsoft 365 admin role group membership to CSV format (supports roles assiged to groups)
