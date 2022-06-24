@@ -5,7 +5,7 @@
      Created on:    09-12-2021 07:32
 	 Updated on:    21-12-2021 12:34
      Created by:    Michael Morten Sonne
-     Organization:  GlobalConnect A/S
+     Organization:  
 	 Name:          Azure Admin Report
      Filename:      AzureADAdminRoleReport.ps1
     ===========================================================================
