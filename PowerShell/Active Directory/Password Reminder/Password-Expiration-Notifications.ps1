@@ -3,9 +3,6 @@
 # Password-Expiration-Notifications v20210428
 # Highly Modified fork. https://gist.github.com/meoso/3488ef8e9c77d2beccfd921f991faa64
 #
-# Originally from v1.4 @ https://gallery.technet.microsoft.com/Password-Expiry-Email-177c3e27
-# Robert Pearman (WSSMB MVP)
-# TitleRequired.com
 # Script to Automated Email Reminders when Users Passwords due to Expire.
 #
 # Requires: Windows PowerShell Module for Active Directory
@@ -26,7 +23,6 @@ $adminEmailAddr = "Admin1@example.com","Admin2@example.com","Admin3@example.com"
 $sampleEmails = 3 #number of sample email to send to adminEmailAddr when testing ; in the form $sampleEmails="ALL" or $sampleEmails=[0..X] e.g. $sampleEmails=0 or $sampleEmails=3 or $sampleEmails="all" are all valid.
 # please edit $body variable within the code
 ###################################################################################################################
-
 
 # System Settings
 $textEncoding = [System.Text.Encoding]::UTF8
@@ -223,7 +219,6 @@ if ($logging -eq $true) {
     $countnotsent Emails skipped.<br>
     $countfailed Emails failed.
     "
-
 
     try {
         Send-Mailmessage -smtpServer $smtpServer -from $from -to $adminEmailAddr -subject "Password Expiry Logs" -body $body -bodyasHTML -Attachments "$logFile" -priority High -Encoding $textEncoding -ErrorAction Stop -ErrorVariable err
