@@ -20,8 +20,8 @@
 
 	Get Office 365 Admin Roles and the Members: 
 	Next, as an administrator, we know you will be interested on the Azure Active Directory Administrator Roles-based report. We have geared up the script to deliver the roles report also. 
-	Using the -RoleBasedAdminReport switch, you will achieve the Azure active directory roles report with  associated administrators. If the report doesn’t show the role,
-	it means that role doesn’t have the administrator. To get role based admin report, execute the script as follows:
+	Using the -RoleBasedAdminReport switch, you will achieve the Azure active directory roles report with  associated administrators. If the report doesn"t show the role,
+	it means that role doesn"t have the administrator. To get role based admin report, execute the script as follows:
 	.\AdminReport.ps1 -RoleBasedAdminReport
 
 	Get Azure AD Roles for a User: 
@@ -30,14 +30,14 @@
 	.\AdminReport.ps1 -AdminName chris@contoso.com,karol@contoso.com
 
 	List all Admins of a Specific Role: 
-	Like the ‘AdminName,’ you can provide the role names in the –RoleName parameter. The script will give you the administrators for the given role(s). If there are no administrators for
+	Like the "AdminName," you can provide the role names in the -RoleName parameter. The script will give you the administrators for the given role(s). If there are no administrators for
 	the specified role, the report will skip that. 
-	.\AdminReport.ps1 -RoleName “Helpdesk Administrator,Service Support Administrator"
+	.\AdminReport.ps1 -RoleName "Helpdesk Administrator,Service Support Administrator"
 
 	List all Global Administrators in Office 365 Tenant:
 	How to find what users have been assigned as global admins? 
-	To deal this right, you can use the –RoleName param with ‘Company Administrator’.
-	.\AdminReport.ps1 -RoleName “Company Administrator"
+	To deal this right, you can use the -RoleName param with "Company Administrator".
+	.\AdminReport.ps1 -RoleName "Company Administrator"
 
 	Get Scheduled Office 365 Admin Report (not for MFA):
 	To schedule this script, you can use task scheduler by explicitly mentioning the credential. Take a look at the below format to get the scheduled Admin Report.
