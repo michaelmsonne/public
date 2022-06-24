@@ -8,17 +8,17 @@
 # Requires: Windows PowerShell Module for Active Directory
 #
 ##################################################################################################################
-# Please Configure the following variables....
+# Please Configure the following variables
 $testing = $true # Set to $false to Email Users. $true to email samples to administrators only (see $sampleEmails below)
 $SearchBase="DC=EXAMPLE,DC=COM"
 ### PURGING this option; seems to cause issue. # $ExcludeList="'New Employees'|'Separated Employees'"   #in the form of "SubOU1|SubOU2|SubOU3" -- possibly needing single quote for OU's with spaces, separate OU's with pipe and double-quote the list.
-$smtpServer="smtp.example.com"
+$smtpServer="smtp.example.com" #For Exchange Online use the MX DNS address and allow your public IP to send internal emails to your users
 $expireindays = 7 #number of days of soon-to-expire paswords. i.e. notify for expiring in X days (and every day until $negativedays)
 $negativedays = -3 #negative number of days (days already-expired). i.e. notify for expired X days ago
 $from = "Administrator <administrator@example.com>"
 $logging = $true # Set to $false to Disable Logging
 $logNonExpiring = $false
-$logFile = "c:\PS-pwd-expiry.csv" # ie. c:\mylog.csv
+$logFile = "c:\Scripts\Password-Expiration-Notifications\PS-pwd-expiry-log.csv" # ie. c:\mylog.csv
 $adminEmailAddr = "Admin1@example.com","Admin2@example.com","Admin3@example.com" #multiple addr allowed but MUST be independent strings separated by comma
 $sampleEmails = 3 #number of sample email to send to adminEmailAddr when testing ; in the form $sampleEmails="ALL" or $sampleEmails=[0..X] e.g. $sampleEmails=0 or $sampleEmails=3 or $sampleEmails="all" are all valid.
 # please edit $body variable within the code
@@ -26,10 +26,10 @@ $sampleEmails = 3 #number of sample email to send to adminEmailAddr when testing
 
 # System Settings
 $textEncoding = [System.Text.Encoding]::UTF8
-$date = Get-Date -format yyyy-MM-dd #for logfile only
-$starttime=Get-Date #need time also; don't use date from above
+$date = Get-Date -format dd-MM-yyyy #for logfile only
+$starttime = Get-Date #need time also; don't use date from above
 
-Write-Host "Processing `"$SearchBase`" for Password-Expiration-Notifications"
+Write-Host "Processing `"$SearchBase`" for Password-Expiration-Notifications..."
 Write-Host "Testing Mode: $testing"
 
 # Get Users From AD who are Enabled, Passwords Expire
@@ -56,7 +56,7 @@ if ( $sampleEmails -isNot [int]) {
 if (($testing -eq $true) -and ($sampleEmails -ge 0)) {
     Write-Host "Testing only; $sampleEmails email samples will be sent to $adminEmailAddr"
 } elseif (($testing -eq $true) -and ($sampleEmails -eq 0)) {
-    Write-Host "Testing only; emails will NOT be sent"
+    Write-Host "Testing only; emails will NOT be sent!"
 }
 
 # Create CSV Log
@@ -197,6 +197,7 @@ Write-Host "Email trigger range from $negativedays (past) to $expireindays (upco
 Write-Host "$countsent Emails Sent."
 Write-Host "$countnotsent Emails skipped."
 Write-Host "$countfailed Emails failed."
+Write-Host "Script done" -fore -Green
 
 # sort the CSV file
 if ($logging -eq $true) {
