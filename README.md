@@ -7,7 +7,7 @@ This repository contains a number of scripts that I have written or enhanced to 
 It includes Scripts for Exchange/Exchange Online, Microsoft 365, Active Directory, Windows Clients/Servers and VMware which I have created/collected over time.
 
 # Download the contents of this repository to your workstation.
-To use a script you can copy it onto your workstation and open the PowerShell window in that location. To read more about running PowerShell scripts, you can read this article: <a href="[https://blog.sonnes.cloud/](https://docs.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_run_with_powershell)" target="_blank">[https://blog.sonnes.cloud/](https://docs.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_run_with_powershell)</a>
+To use a script you can copy it onto your workstation and open the PowerShell window in that location. To read more about running PowerShell scripts, you can read this article: <a href="https://docs.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_run_with_powershell/" target="_blank">https://docs.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_run_with_powershell/</a>
 
 # Downloading the Scripts:
 
