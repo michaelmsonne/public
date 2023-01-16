@@ -7,7 +7,6 @@ ForEach-Object {Set-ADAccountControl -Identity $_ -UseDESKeyOnly $false}
 
 #Remove RC4 from the attribute
 #To remove RC4 from these accounts, you can proceed as follows:
-
 Get-ADUser -Filter 'msDS-SupportedEncryptionTypes -band 0x4' -Properties msDS-SupportedEncryptionTypes |
 ForEach-Object {
     $NewEncTyp = $_.'msDS-SupportedEncryptionTypes' - 0x4
