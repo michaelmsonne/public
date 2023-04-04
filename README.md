@@ -20,7 +20,7 @@ Additionally you can download these scripts from this [OneDrive link].
 
 [OneDrive link]: https://xxx
 
-Launch PowerShell and make sure Set-ExecutionPolicy is set to RemoteSigned or Bypass
+Launch PowerShell and make sure Set-ExecutionPolicy is set to RemoteSigned or Bypass (but some scripts may be signed with my Code Sign certificate)
 
 # Code Disclaimer:
 
