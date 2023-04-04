@@ -14,7 +14,7 @@ To use a script you can copy it onto your workstation and open the PowerShell wi
 You can clone the repository:
 
 ```sh
-git clone https://github.com/michaelmsonne/Blog.git
+git clone https://github.com/michaelmsonne/blog.git
 ```
 Additionally you can download these scripts from this [OneDrive link].
 
@@ -27,6 +27,10 @@ Launch PowerShell and make sure Set-ExecutionPolicy is set to RemoteSigned or By
 The following is the disclaimer that applies to all scripts, functions etc. This disclaimer supersedes any disclaimer included in any script, function, etc.
 
 You running this script/function means you will not blame the author(s) if this breaks your stuff. This script/function is provided AS IS without warranty of any kind. Author(s) disclaim all implied warranties including, without limitation, any implied warranties of merchant-ability or of fitness for a particular purpose. The entire risk arising out of the use or performance of the scripts remains with you. In no event shall author(s) be held liable for any damages whatsoever (including, without limitation, damages for loss of business profits, business interruption, loss of business information, or other pecuniary loss) arising out of the use of or inability to use the script or documentation. Neither this script/function, nor any part of it other than those parts that are explicitly copied from others, may be republished without author(s) express written permission. Author(s) retain the right to alter this disclaimer at any time.
+
+All the scripts provided in this blog are based on my personal views/usage scenarios. There is no guarantee or warranty that these will work your environment without any issues.
+
+You need to test them yourself in your test lab before trying in production. The author of this blog is not responsible if the usage of scripts given in this blog causes any damage to your environment or malfunctions.
 
 # Feedback/Suggestions:
 
