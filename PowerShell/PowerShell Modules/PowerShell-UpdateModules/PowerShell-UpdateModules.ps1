@@ -10,7 +10,7 @@
 	.DESCRIPTION
 		Update PowerShell Modules
 
-        If you look for a quick way to update, please keep in mind Microsoft has a built-in CMDlzt to update ALL the PowerShell modules installed:
+        If you look for a quick way to update, please keep in mind Microsoft has a built-in cmdlet to update ALL the PowerShell modules installed:
         Update-Module [-Verbose]
 
         This script is intended as a replacement of the Update-Module:
