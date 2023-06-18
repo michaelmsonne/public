@@ -25,6 +25,12 @@
 	.EXAMPLE
 		.\PowerShell-UpdateModules.ps1
 
+        Update installed modules automaticly
+
+        .\PowerShell-UpdateModules.ps1 -SimulationMode
+
+        Simulate the update process of installed modules - nothing is installed / removed / updated
+
     .NOTES
         Updated at:	18-06-2023
 #>
