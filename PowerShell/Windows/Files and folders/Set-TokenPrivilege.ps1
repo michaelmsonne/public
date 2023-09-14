@@ -3,7 +3,7 @@
     ===========================================================================
      Created with:  Microsoft Visual Studio 2022
      Created on:    15-03-2022 09:29
-	 Updated on:    x
+	 Updated on:    14-09-2023 22:13
      Created by:    Michael Morten Sonne
      Organization:  
 	 Name:          Set-TokenPrivilege
