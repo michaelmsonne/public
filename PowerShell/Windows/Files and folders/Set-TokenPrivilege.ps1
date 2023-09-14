@@ -16,7 +16,7 @@
 
     .EXAMPLE
     Enabled:
-    PS C:\> \Set-TokenPrivilege.ps1 SeRestorePrivilege 
+    .\Set-TokenPrivilege.ps1 SeRestorePrivilege 
     It should return: True
 
     Vertify you have it with: PowerShell or CMD: whoami /priv
