@@ -1,7 +1,7 @@
 # Public Scripts Repository
 Repository of scripts and so on from my blog <a href="https://blog.sonnes.cloud/" target="_blank">https://blog.sonnes.cloud/</a>, and these are linked from individual blog posts over here.
 
-Some scripts is also here just to be public.
+Some scripts is also here just to be public too - and not showed on my blog etc.
 
 This repository contains a number of scripts that I have written or enhanced to make day-to-day life easier for system administators. These are provided for free to the community under an MIT License. An explantion or guide on how to use the scripts can be found on my blog <a href="https://blog.sonnes.cloud/" target="_blank">https://blog.sonnes.cloud/</a> or here in a README.MD file.
 It includes Scripts for Exchange/Exchange Online, Microsoft 365, Active Directory, Windows Clients/Servers, Security and VMware which I have created/collected over the time.
