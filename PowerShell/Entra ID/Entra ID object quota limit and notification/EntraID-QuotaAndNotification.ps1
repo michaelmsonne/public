@@ -15,6 +15,14 @@
         - Microsoft Teams Webhook URL
         - Microsoft Graph API Application with the following permissions: Organization.Read.All
 
+    .CHANGELOG
+        06-12-2023 - Michael Morten Sonne - Initial release'
+        07-12-2023 - Michael Morten Sonne - Added support for connecting to Microsoft Graph API using a certificate and client secret
+        08-12-2023 - Michael Morten Sonne - Added support for sending Microsoft Teams notifications using a webhook
+        12-12-2023 - Michael Morten Sonne - Added support for checking if the used percentage is over 100% of the maximum size
+        14-12-2023 - Michael Morten Sonne - Some code cleanup
+        24-12-2023 - Michael Morten Sonne - Added check for module Microsoft.Graph.Authentication and exit if not installed
+
 	.EXAMPLE
 		.\EntraID-QuotaAndNotification.ps1
         
