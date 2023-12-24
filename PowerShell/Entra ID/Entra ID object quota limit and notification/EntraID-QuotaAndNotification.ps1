@@ -42,6 +42,16 @@ param(
     [string]$WebhookUrl
 )
 
+# Check that Microsoft Graph PowerShell SDK (Authentication part minimum) is installed and import the module
+if (-not (Get-Module -Name "Microsoft.Graph.Authentication")) {
+    Write-Host "Microsoft Graph PowerShell SDK (Authentication) is not installed. Please install it from the PowerShell Gallery." -ForegroundColor Red
+    Write-Host "Exiting..." -ForegroundColor Red
+    Exit
+} else {
+    Write-Host "Microsoft Graph PowerShell SDK (Authentication) is installed!" -ForegroundColor Green
+    Import-Module -Name "Microsoft.Graph.Authentication"
+}
+
 # Check if either CertificateThumbprint or ClientSecret was provided as a parameter to the script and exit if not
 if (-not ($CertificateThumbprint -or $ClientSecret)) {
     Write-Host "At least one of CertificateThumbprint or ClientSecret should be provided." -ForegroundColor Red
