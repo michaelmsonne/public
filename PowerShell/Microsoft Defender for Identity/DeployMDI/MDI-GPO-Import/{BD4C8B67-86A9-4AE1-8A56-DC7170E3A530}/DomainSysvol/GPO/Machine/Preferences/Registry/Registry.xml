@@ -1,0 +1,6 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<RegistrySettings clsid="{A3CCFC41-DFDB-43a5-8D26-0FE8B954DA51}">
+  <Registry clsid="{9CD4B2F4-923D-47f5-A062-E897DD1DAD50}" name="AuditFilter" status="AuditFilter" image="2" changed="2024-01-19 5:41:57" uid="{790B756F-909B-45CB-B2E5-C86984C25035}" disabled="0">
+    <Properties action="U" displayDecimal="0" default="0" hive="HKEY_LOCAL_MACHINE" key="System\CurrentControlSet\Services\CertSvc\Configuration\%DomainName%-%ComputerName%-CA" name="AuditFilter" type="REG_DWORD" value="0000007F" />
+  </Registry>
+</RegistrySettings>
