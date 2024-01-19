@@ -18,7 +18,7 @@
 Import-Module ActiveDirectory
 
 # Check if AD Recycle Bin is enabled
-Write-host "Checking if AD Recycle Bin is enabled..."
+Write-host "Checking if AD Recycle Bin is enabled..." -ForegroundColor Yellow
 
 # Enable AD Recycle Bin if not already enabled
 if (-not (Get-ADOptionalFeature -Filter {name -eq 'Recycle Bin Feature'} -ErrorAction SilentlyContinue)) {
@@ -83,3 +83,6 @@ C:\Windows\System32\dsacls.exe $params
 # To revoke the permissions, uncomment the following two lines and execute them in place of the preceding two lines:
 # $params = @("$deletedObjectsDN", '/R', ('{0}\{1}' -f ([adsi]'').name.Value, $gMSA_AccountName))
 # C:\Windows\System32\dsacls.exe $params
+
+# Script completed
+Write-host "Script completed."

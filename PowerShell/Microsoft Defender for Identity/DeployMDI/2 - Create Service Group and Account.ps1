@@ -41,14 +41,14 @@ try {
         try {
             Add-ADGroupMember -Identity $gMSA_HostsGroupName -Members $computer -ErrorAction Stop
         } catch {
-            Write-Host "Error adding member to group: $_"
+            Write-Host "Error adding member to group: $_" -ForegroundColor Red
         }
     }
     # Show a confirmation that the members have been added to the group
     Write-Host "Member(s) added to group '$gMSA_HostsGroupName'." -ForegroundColor Green
 } catch {
     # Show an error if the members could not be added to the group
-    Write-Host "Error when add member(s) to the group: $_"
+    Write-Host "Error when add member(s) to the group: $_" -ForegroundColor Red
 }
 
 # if ad kds key not exists in AD, create it
@@ -66,7 +66,7 @@ try {
     # Show a confirmation that the gMSA account has been created
     Write-Host "gMSA account '$gMSA_AccountName' created." -ForegroundColor Green
 } catch {
-    Write-Host "Error creating service account: $_"
+    Write-Host "Error creating gMSA service account: $_" -ForegroundColor Red
 }
 
 # Show a warning that the gMSA account password needs to be changed
@@ -80,7 +80,7 @@ try {
     Write-Host "gMSA account password changed." -ForegroundColor Green
 } catch {
     # Show an error if the gMSA account password could not be changed
-    Write-Host "Error changing service account password: $_"
+    Write-Host "Error changing service account password: $_" -ForegroundColor Red
 }
 
 # Show a warning that the gMSA account needs to be validated
@@ -94,7 +94,7 @@ try {
     Write-Host "gMSA account validated." -ForegroundColor Green
 } catch {
     # Show an error if the gMSA account could not be validated
-    Write-Host "Error validating service account: $_"
+    Write-Host "Error validating service account: $_" -ForegroundColor Red
 }
 
 # Show a warning that the gMSA account needs to be installed on the hosts
@@ -104,9 +104,12 @@ Write-Host "gMSA account needs to be installed on the hosts. Installing it now..
 try {
     Install-ADServiceAccount -Identity $gMSA_AccountName -ErrorAction Stop
 
-    # Show a confirmation that the gMSA account has been installed on the hosts
-    Write-Host "gMSA account installed on the hosts." -ForegroundColor Green
+    # Show a confirmation that the gMSA account has been installed on the host
+    Write-Host "gMSA account installed on the host." -ForegroundColor Green
 } catch {
-    # Show an error if the gMSA account could not be installed on the hosts
-    Write-Host "Error installing service account on the hosts: $_"
+    # Show an error if the gMSA account could not be installed on the host
+    Write-Host "Error installing service account on the host: $_" -ForegroundColor Red
 }
+
+# Script completed
+Write-host "Script completed."

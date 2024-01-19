@@ -68,7 +68,7 @@ if (Test-Path $InstallerPath -PathType Leaf) {
     }
 
     # Start the installation process
-    Write-Host "Starting installation process..."
+    Write-Host "Starting installation process..."  -ForegroundColor Yellow
     $Process = Start-Process -FilePath $InstallerPath -ArgumentList $ArgumentList -PassThru -Wait
 
     if ($Process.ExitCode -eq 0) {
@@ -77,7 +77,7 @@ if (Test-Path $InstallerPath -PathType Leaf) {
         Write-Host "Installation failed with exit code $($Process.ExitCode)." -ForegroundColor Red
     }
 } else {
-    Write-Host "Error: 'Azure ATP sensor Setup.exe' not found in the current folder."
+    Write-Host "Error: 'Azure ATP sensor Setup.exe' not found in the current folder." -ForegroundColor Red
 }
 
 # Script completed

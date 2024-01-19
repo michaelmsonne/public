@@ -77,5 +77,26 @@ CreateAndImportGPO -GPOName "Microsoft Defender for Identity - Auditing for CAs"
 CreateAndImportGPO -GPOName "Microsoft Defender for Identity - NTLM Auditing for DCs" -BackupId "E633D0F2-7726-4707-84E6-992BC2E1426F"
 CreateAndImportGPO -GPOName "Microsoft Defender for Identity - Processor Performance" -BackupId "FEF8FAFF-A207-45FD-BB90-7530365A0062"
 
+# Ask the user if they want to delete the file
+$DeleteFile = Read-Host "Do you want to delete the file $ZipFilePath (downloaded GPO files)? (Enter 'Y' for Yes, 'N' for No)"
+
+try {
+    # Process user input
+    if ($DeleteFile -eq 'Y' -or $DeleteFile -eq 'y') {
+        # Delete the file
+        Remove-Item -Path $ZipFilePath -Force
+
+        # Show a confirmation that the file has been deleted
+        Write-Host "File $ZipFilePath deleted successfully." -ForegroundColor Green
+    } else {
+        # Show a warning that the file was not deleted
+        Write-Host "File deletion canceled. The file $ZipFilePath was not deleted." -ForegroundColor Red
+    }
+}
+catch {
+    # Show an error if the file could not be deleted
+    Write-Host "An error occurred: $_" -ForegroundColor Red
+}
+
 # Script completed
 Write-host "Script completed."
