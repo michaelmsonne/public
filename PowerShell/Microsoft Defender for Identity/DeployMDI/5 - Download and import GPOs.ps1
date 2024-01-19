@@ -39,7 +39,7 @@ function CreateAndImportGPO {
 }
 
 # Set the source URL and destination paths
-$SourceUrl = "https://github.com/michaelmsonne/public/Microsoft Defender for Identity/DeployMDI/raw/main/MDI-GPO-Import.zip"
+$SourceUrl = "https://raw.githubusercontent.com/michaelmsonne/public/main/PowerShell/Microsoft%20Defender%20for%20Identity/DeployMDI/MDI-GPO-Import.zip"
 $DestinationFolder = "C:\Temp"
 
 # Download the file using BITS
