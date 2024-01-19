@@ -65,7 +65,6 @@
    - Execute the script to ensure the gMSA account is set up correctly on the host in a PowerShell Console.
 
 5. **'5 - Download and import GPOs.ps1':**
-   - Customize the script with appropriate source URLs and paths.
    - Run the script to download and import GPO settings into your environment if needed.
 
 **Important Notes:**
