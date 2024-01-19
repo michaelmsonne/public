@@ -61,7 +61,7 @@ if (-not (Get-ADObject -Filter {objectclass -eq 'msDS-KeyCredentialLink'} -Searc
 Write-Host "Creating gMSA account '$gMSA_AccountName'..." -ForegroundColor Yellow
 try {
     # Create the gMSA account
-    New-ADServiceAccount -Name $gMSA_AccountName -DNSHostName "$gMSA_AccountName.$env:USERDNSDOMAIN" -PrincipalsAllowedToRetrieveManagedPassword $gMSA_HostsGroupName -ErrorAction Stop
+    New-ADServiceAccount -Name $gMSA_AccountName -DNSHostName "$gMSA_AccountName.$env:USERDNSDOMAIN" -Description "Microsoft Defender for Identity service account" -KerberosEncryptionType AES256 -ManagedPasswordIntervalInDays 30 -PrincipalsAllowedToRetrieveManagedPassword $gMSA_HostsGroupName -ErrorAction Stop
 
     # Show a confirmation that the gMSA account has been created
     Write-Host "gMSA account '$gMSA_AccountName' created." -ForegroundColor Green
