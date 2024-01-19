@@ -2,6 +2,33 @@
 
 ### Readme for MDI Deployment Scripts
 
+# Instructions for Using PowerShell Console as an Administrator
+
+1. **Open PowerShell as an Administrator:**
+   - Right-click on the PowerShell icon.
+   - Select "Run as administrator" from the context menu.
+
+2. **Enable Script Execution:**
+   - To allow script execution, set the execution policy. Run the following command:
+     ```powershell
+     Set-ExecutionPolicy RemoteSigned
+     ```
+     Choose 'Y' when prompted to confirm.
+
+3. **Navigate to the Script Directory:**
+   - Change the current directory to the location where your PowerShell script is saved using the `cd` command:
+     ```powershell
+     cd C:\Temp\MDISetupScripts
+     ```
+
+4. **Run the PowerShell Script:**
+   - Execute your script using the following command:
+     ```powershell
+     .\YourScript.ps1
+     ```
+     Replace "YourScript.ps1" with the actual name of your PowerShell script - etc. '**.\1 - Install the Sensor.ps1**'.
+
+
 ## Scripts Overview:
 
 1. **'1 - Install the Sensor.ps1':**
