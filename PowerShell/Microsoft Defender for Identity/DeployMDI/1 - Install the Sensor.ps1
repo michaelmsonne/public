@@ -5,11 +5,14 @@
 	 Created on:   	18-01-2024 19:23
 	 Created by:   	Michael Morten Sonne
 	 Organization: 	Sonne´s Cloud
-	 Filename:     	"1 - Create Service Group and Account.ps1"
+	 Filename:     	"1 - Install the Sensor.ps1"
 	 Version:		1.0
 	===========================================================================
 	.DESCRIPTION
         This script will install the sensor on the host and ask for the access key.
+
+    .EXAMPLE
+        .\"1 - Install the Sensor.ps1"
 #>
 
 # Install MDI sensor:

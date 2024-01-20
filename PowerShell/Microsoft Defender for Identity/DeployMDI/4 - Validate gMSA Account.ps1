@@ -10,6 +10,9 @@
 	===========================================================================
 	.DESCRIPTION
         This script will validate the gMSA account.
+
+	.EXAMPLE
+        .\"4 - Validate gMSA Account.ps1"
 #>
 
 # Import the required PowerShell module for Active Directory:

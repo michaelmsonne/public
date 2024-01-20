@@ -10,6 +10,9 @@
 	===========================================================================
 	.DESCRIPTION
         This script will download and extract the MDI GPOs.
+
+    .EXAMPLE
+        .\"5 - Download and import GPOs.ps1"
 #>
 
 # Function to create and import GPOs

@@ -10,6 +10,9 @@
 	===========================================================================
 	.DESCRIPTION
         This script will create a gMSA account and a group for the gMSA account to be a member of.
+
+    .EXAMPLE
+        .\"2 - Create Service Group and Account.ps1"
 #>
 
 # Please set the variables below to match your environment:

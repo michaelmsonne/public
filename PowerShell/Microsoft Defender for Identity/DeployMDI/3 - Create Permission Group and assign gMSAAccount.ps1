@@ -10,6 +10,9 @@
 	===========================================================================
 	.DESCRIPTION
         This script will create a group and add the gMSA account to it. It will also grant the group read access to the deleted objects container in AD.
+
+    .EXAMPLE
+        .\"3 - Create Permission Group and assign gMSAAccount.ps1"
 #>
 
 # Make sure AD Recycle bin is enabled. This can be done from Administrative center also.
