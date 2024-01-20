@@ -54,10 +54,33 @@ try {
     Write-Host "Error when add member(s) to the group: $_" -ForegroundColor Red
 }
 
-# if ad kds key not exists in AD, create it
-if (-not (Get-ADObject -Filter {objectclass -eq 'msDS-KeyCredentialLink'} -SearchBase (Get-ADRootDSE).configurationNamingContext -ErrorAction SilentlyContinue)) {
-    # Create the KDS root key
-    Add-KdsRootKey -EffectiveTime ((get-date).addhours(-10))
+# Check if a Kds Root Key exists in your domain
+Write-Host "Checking if a Kds Root key exists in your domain $env:USERDNSDOMAIN ..." -ForegroundColor Yellow
+try {
+    if (-not (Get-KdsRootKey).Count) {
+        # Create a Kds Root Key if it does not exist
+        Write-Host "Creating a Kds Root Key as non exist..." -ForegroundColor Yellow
+
+        # Create a Kds Root Key
+        Add-KdsRootKey -EffectiveTime ((get-date).addhours(-10)) | Out-Null
+
+        # Show a confirmation that the Kds Root Key has been created
+        Write-Host "Created a Kds Root Key ..." -ForegroundColor Green
+    }
+    else {
+        # Show a warning that a Kds Root Key already exists
+        Write-Host "A Kds Root Key already exists so no need to create one in your domain $env:USERDNSDOMAIN" -ForegroundColor Green
+    }
+}
+catch {
+    # Show an error if the Kds Root Key could not be created
+    Write-Host "Error when creating Root Key: $_" -ForegroundColor Red
+    exit
+}
+if ($?)
+{
+    # Check if the Kds Root Key is replicated to all DCs
+    Write-Host "Done checking if a Kds Root Key exists..." -ForegroundColor Green
 }
   
 # Create the gMSA account for MDI:
@@ -70,20 +93,6 @@ try {
     Write-Host "gMSA account '$gMSA_AccountName' created." -ForegroundColor Green
 } catch {
     Write-Host "Error creating gMSA service account: $_" -ForegroundColor Red
-}
-
-# Show a warning that the gMSA account password needs to be changed
-Write-Host "gMSA account password needs to be changed. Changing it now..." -ForegroundColor Yellow
-
-# Change the gMSA account password
-try {
-    Set-ADServiceAccount -Identity $gMSA_AccountName -Reset -Credential (Get-Credential) -ErrorAction Stop
-
-    # Show a confirmation that the gMSA account password has been changed
-    Write-Host "gMSA account password changed." -ForegroundColor Green
-} catch {
-    # Show an error if the gMSA account password could not be changed
-    Write-Host "Error changing service account password: $_" -ForegroundColor Red
 }
 
 # Show a warning that the gMSA account needs to be validated
