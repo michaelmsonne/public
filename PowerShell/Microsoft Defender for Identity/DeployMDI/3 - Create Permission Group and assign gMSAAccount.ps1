@@ -55,7 +55,7 @@ else {
 $gMSA_AccountName = 'gMSAMDI'
 
 # If the identity is a gMSA, first to create a group and add the gMSA to it:
-$gMSA_PermissionGroupName = 'mdigmsapermissiongroup'
+$gMSA_PermissionGroupName = 'MDIActionAccounts'
 $gMSA_PermissionGroupDescription = 'Members of this group are allowed to read the objects in the Deleted Objects container in AD'
 if(Get-ADServiceAccount -Identity $gMSA_AccountName -ErrorAction SilentlyContinue) {
     $groupParamsSettings = @{

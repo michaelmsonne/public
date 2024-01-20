@@ -28,7 +28,7 @@ Import-Module ActiveDirectory
 # Create the group for the gMSA account to be a member of (if it does not already exist):
 try {
     # Create the group
-    New-ADGroup -Name $gMSA_HostsGroupName -GroupCategory Security -GroupScope DomainLocal -PassThru -ErrorAction Stop
+    New-ADGroup -Name $gMSA_HostsGroupName -GroupCategory Security -GroupScope DomainLocal -PassThru #-ErrorAction Stop
 
     # Show a confirmation that the group has been created
     Write-Host "Group '$gMSA_HostsGroupName' created." -ForegroundColor Green
@@ -42,8 +42,14 @@ try {
     $gMSA_HostNames | ForEach-Object {
         $computer = Get-ADComputer -Identity $_ -ErrorAction Stop
         try {
-            Add-ADGroupMember -Identity $gMSA_HostsGroupName -Members $computer -ErrorAction Stop
+            # Add the member to the group
+            Add-ADGroupMember -Identity $gMSA_HostsGroupName -Members $computer #-ErrorAction Stop
+
+            # Show a confirmation that the member has been added to the group
+            Write-Host "Added $computer to the group: $gMSA_HostsGroupName" -ForegroundColor Yellow
+
         } catch {
+            # Show an error if the member could not be added to the group
             Write-Host "Error adding member to group: $_" -ForegroundColor Red
         }
     }
@@ -77,12 +83,21 @@ catch {
     Write-Host "Error when creating Root Key: $_" -ForegroundColor Red
     exit
 }
-  
+
 # Create the gMSA account for MDI:
-Write-Host "Creating gMSA account '$gMSA_AccountName'..." -ForegroundColor Yellow
+Write-Host "Creating gMSA account '$gMSA_AccountName' if a gMSA account with the name $gMSA_AccountName not exists..." -ForegroundColor Yellow
 try {
-    # Create the gMSA account
-    New-ADServiceAccount -Name $gMSA_AccountName -DNSHostName "$gMSA_AccountName.$env:USERDNSDOMAIN" -Description "Microsoft Defender for Identity service account" -KerberosEncryptionType AES256 -ManagedPasswordIntervalInDays 30 -PrincipalsAllowedToRetrieveManagedPassword $gMSA_HostsGroupName -ErrorAction Stop
+    if (!([bool](Get-ADServiceAccount -Filter { Name -eq $gMSA_AccountName }))) {
+        # Create the gMSA account
+        New-ADServiceAccount -Name $gMSA_AccountName -DNSHostName "$gMSA_AccountName.$env:USERDNSDOMAIN" -Description "Microsoft Defender for Identity service account" -KerberosEncryptionType AES256 -ManagedPasswordIntervalInDays 30 -PrincipalsAllowedToRetrieveManagedPassword $gMSA_HostsGroupName
+
+        # Show a confirmation that the gMSA account has been created
+        Write-Host "Created a gMSA account with the name: $gMSA_AccountName" -ForegroundColor Green
+    }
+    else {
+        # Show a warning that a gMSA account already exists
+        Write-Host "  A Group Managed Service Account with the name $gMSA_AccountName already exists" -ForegroundColor Yellow
+    }
 
     # Show a confirmation that the gMSA account has been created
     Write-Host "gMSA account '$gMSA_AccountName' created." -ForegroundColor Green
