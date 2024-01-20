@@ -77,11 +77,6 @@ catch {
     Write-Host "Error when creating Root Key: $_" -ForegroundColor Red
     exit
 }
-if ($?)
-{
-    # Check if the Kds Root Key is replicated to all DCs
-    Write-Host "Done checking if a Kds Root Key exists..." -ForegroundColor Green
-}
   
 # Create the gMSA account for MDI:
 Write-Host "Creating gMSA account '$gMSA_AccountName'..." -ForegroundColor Yellow
