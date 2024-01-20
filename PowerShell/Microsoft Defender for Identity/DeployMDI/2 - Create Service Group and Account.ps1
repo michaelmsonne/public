@@ -28,7 +28,7 @@ Import-Module ActiveDirectory
 # Create the group for the gMSA account to be a member of (if it does not already exist):
 try {
     # Create the group
-    New-ADGroup -Name $gMSA_HostsGroupName -GroupScope Global -PassThru -ErrorAction Stop
+    New-ADGroup -Name $gMSA_HostsGroupName -GroupCategory Security -GroupScope DomainLocal -PassThru -ErrorAction Stop
 
     # Show a confirmation that the group has been created
     Write-Host "Group '$gMSA_HostsGroupName' created." -ForegroundColor Green
