@@ -1,104 +1,84 @@
-﻿<#	
+<#	
 	.NOTES
 	===========================================================================
 	 Created with: 	SAPIEN Technologies, Inc., PowerShell Studio 2022 v5.8.213
-	 Created on:   	19-01-2024 19:04
+	 Created on:   	18-01-2024 19:23
 	 Created by:   	Michael Morten Sonne
 	 Organization: 	Sonne´s Cloud
-	 Filename:     	"5 - Download and import GPOs.ps1"
+	 Filename:     	"1 - Install the Sensor - arguments.ps1"
 	 Version:		1.0
 	===========================================================================
 	.DESCRIPTION
-        This script will download and extract the MDI GPOs.
+        This script will install the sensor on the host and ask for the access key.
 
     .EXAMPLE
-        .\"5 - Download and import GPOs.ps1"
+        .\"1 - Install the Sensor - arguments.ps1" -AccessKey 'YourAccessKey' -UseProxy -ProxyUrl 'YourProxyUrl' -ProxyUserName 'YourProxyUsername' -ProxyUserPassword 'YourProxyPassword'
 #>
 
-# Function to create and import GPOs
-function CreateAndImportGPO {
-    param (
-        [string]$GPOName,
-        [string]$BackupId
-    )
+param (
+    [string]$InstallerPath = ".\Azure ATP sensor Setup.exe",
+    [string]$AccessKey,
+    [switch]$UseProxy,
+    [string]$ProxyUrl,
+    [string]$ProxyUserName,
+    [string]$ProxyUserPassword # Needs to be a SecureString, but fails when using [SecureString]$ProxyUserPassword... TODO: Fix this
+)
 
-    try {
-        $GPO = New-GPO -Name $GPOName
+# Check if the installer exists
+Write-Host "Checking if '$InstallerPath' exists in the current folder..." -ForegroundColor Yellow
+if (Test-Path $InstallerPath -PathType Leaf) {
+    # Confirm that the installer exists
+    Write-Host "'$InstallerPath' found in the current folder." -ForegroundColor Green
 
-        try {
-            Import-GPO -Path C:\Temp\MDI-GPOs -BackupId $BackupId -TargetGuid $GPO.Id -Domain $localdomain.Forest
+    # Make AccessKey mandatory
+    if (-not $AccessKey) {
+        throw "Error: AccessKey is mandatory. Please provide a valid AccessKey."
+    }
 
-            # Uncomment the following line to automatically link GPO to the Domain Controllers OU
-            # New-GPLink -Name $GPO.DisplayName -Target "OU=Domain Controllers,DC=lab,DC=sonnes,DC=cloud"
-            Write-Host "GPO '$GPOName' created and imported successfully." -ForegroundColor Green
-        } catch {
-            Write-Host "Error importing GPO '$GPOName': $_" -ForegroundColor Red
-            # Handle the import error as needed
+    # Check if the user wants to use a proxy
+    if ($UseProxy) {
+        # Check if the proxy settings are complete and not empty
+        if ([string]::IsNullOrWhiteSpace($ProxyUrl) -or [string]::IsNullOrWhiteSpace($ProxyUserName) -or -not $ProxyUserPassword) {
+            Write-Host "Error: Proxy settings are incomplete. Please provide all proxy details (ProxyUrl, ProxyUsername, and ProxyPassword)." -ForegroundColor Red
+            return
         }
-    } catch {
-        Write-Host "Error creating GPO '$GPOName': $_" -ForegroundColor Red
-        # Handle the creation error as needed
+        else {
+            # Convert the plain text password to a SecureString
+            $SecureProxyUserPassword = ConvertTo-SecureString -String $ProxyUserPassword -AsPlainText -Force
+            # Clear the plain text password from memory
+            $ProxyUserPassword = $null
+
+            # Confirm the entered proxy settings
+            Write-Host "Entered Proxy Settings:" -ForegroundColor Yellow
+            Write-Host "Proxy URL: $ProxyUrl"
+            Write-Host "Proxy Username: $ProxyUserName"
+            Write-Host "Proxy Password: Not shown for security reasons."
+
+            # Proxy arguments for the installer confirmed by the user
+            Write-Host "Proxy settings confirmed. Continuing with the installation process." -ForegroundColor Green
+
+            # Construct the proxy arguments
+            $ProxyArguments = "/ProxyUrl=`"$ProxyUrl`" /ProxyUserName=`"$ProxyUserName`" /ProxyUserPassword=`"$SecureProxyUserPassword`""
+        }
     }
-}
 
-# Set the source URL and destination paths
-$SourceUrl = "https://raw.githubusercontent.com/michaelmsonne/public/main/PowerShell/Microsoft%20Defender%20for%20Identity/DeployMDI/MDI-GPO-Import.zip"
-$DestinationFolder = "C:\Temp"
+    # Construct the argument list dynamically based on whether a proxy is used
+    $ArgumentList = @('/quiet', 'NetFrameworkCommandLineArguments="/q"', "AccessKey=`"$AccessKey`"")
+    if ($ProxyArguments) {
+        $ArgumentList += $ProxyArguments
+    }
 
-# Download the file using BITS
-try {
-	Write-Host "Downloading the GPO file from $SourceUrl to $DestinationFolder..."
-    Start-BitsTransfer -Source $SourceUrl -Destination $DestinationFolder -DisplayName "Downloading MDI-GPO-Import.zip"
-    Write-Host "Download completed successfully." -ForegroundColor Green
-} catch {
-    Write-Host "Error downloading the file: $_" -ForegroundColor Red
-    exit
-}
+    # Start the installation process
+    Write-Host "Starting installation process..."  -ForegroundColor Yellow
+    $Process = Start-Process -FilePath $InstallerPath -ArgumentList $ArgumentList -PassThru -Wait
 
-# Extract MDI GPOs
-try {
-    $ZipFilePath = Join-Path -Path $DestinationFolder -ChildPath "MDI-GPO-Import.zip"
-    $DestinationPath = Join-Path -Path $DestinationFolder -ChildPath "MDI-GPO"
-
-	Write-Host "Extracting the contents of $ZipFilePath to $DestinationPath..." -ForegroundColor Yellow
-    Expand-Archive -Path $ZipFilePath -DestinationPath $DestinationPath
-    Write-Host "Extraction completed successfully." -ForegroundColor Green
-} catch {
-    Write-Host "Error extracting the contents: $_" -ForegroundColor Red
-    exit
-}
-
-# Import the GPOs
-Write-Host "Importing the GPOs..." -ForegroundColor Yellow
-
-# Create GPOs for domain controllers
-CreateAndImportGPO -GPOName "Microsoft Defender for Identity - Advanced Audit Policy for CAs" -BackupId "10C96B19-99E5-47FB-8D91-7A08255553B2"
-CreateAndImportGPO -GPOName "Microsoft Defender for Identity - Advanced Audit Policy for DCs" -BackupId "E445CE28-CF1E-4FEB-945C-1AF76E2DF490"
-
-# Create other GPOs (Modify as needed)
-CreateAndImportGPO -GPOName "Microsoft Defender for Identity - Auditing for CAs" -BackupId "BD4C8B67-86A9-4AE1-8A56-DC7170E3A530"
-CreateAndImportGPO -GPOName "Microsoft Defender for Identity - NTLM Auditing for DCs" -BackupId "E633D0F2-7726-4707-84E6-992BC2E1426F"
-CreateAndImportGPO -GPOName "Microsoft Defender for Identity - Processor Performance" -BackupId "FEF8FAFF-A207-45FD-BB90-7530365A0062"
-
-# Ask the user if they want to delete the file
-$DeleteFile = Read-Host "Do you want to delete the file $ZipFilePath (downloaded GPO files)? (Enter 'Y' for Yes, 'N' for No)"
-
-try {
-    # Process user input
-    if ($DeleteFile -eq 'Y' -or $DeleteFile -eq 'y') {
-        # Delete the file
-        Remove-Item -Path $ZipFilePath -Force
-
-        # Show a confirmation that the file has been deleted
-        Write-Host "File $ZipFilePath deleted successfully." -ForegroundColor Green
+    if ($Process.ExitCode -eq 0) {
+        Write-Host "Installation completed successfully." -ForegroundColor Green
     } else {
-        # Show a warning that the file was not deleted
-        Write-Host "File deletion canceled. The file $ZipFilePath was not deleted." -ForegroundColor Red
+        Write-Host "Installation failed with exit code $($Process.ExitCode)." -ForegroundColor Red
     }
-}
-catch {
-    # Show an error if the file could not be deleted
-    Write-Host "An error occurred: $_" -ForegroundColor Red
+} else {
+    Write-Host "Error: '$InstallerPath' not found in the current folder." -ForegroundColor Red
 }
 
 # Script completed
@@ -106,8 +86,8 @@ Write-host "Script completed."
 # SIG # Begin signature block
 # MIIo7QYJKoZIhvcNAQcCoIIo3jCCKNoCAQExDzANBglghkgBZQMEAgEFADB5Bgor
 # BgEEAYI3AgEEoGswaTA0BgorBgEEAYI3AgEeMCYCAwEAAAQQH8w7YFlLCE63JNLG
-# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCA2PFH9RMeKM7i9
-# aPB/FTWYnbG2K59ivE1NeYIBCoH2mqCCEd8wggVvMIIEV6ADAgECAhBI/JO0YFWU
+# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCDJC+7p+q9fw/tf
+# lJ7uis9nAYJcgaMNKe9IPzhS79XKeqCCEd8wggVvMIIEV6ADAgECAhBI/JO0YFWU
 # jTanyYqJ1pQWMA0GCSqGSIb3DQEBDAUAMHsxCzAJBgNVBAYTAkdCMRswGQYDVQQI
 # DBJHcmVhdGVyIE1hbmNoZXN0ZXIxEDAOBgNVBAcMB1NhbGZvcmQxGjAYBgNVBAoM
 # EUNvbW9kbyBDQSBMaW1pdGVkMSEwHwYDVQQDDBhBQUEgQ2VydGlmaWNhdGUgU2Vy
@@ -207,23 +187,23 @@ Write-host "Script completed."
 # KzApBgNVBAMTIlNlY3RpZ28gUHVibGljIENvZGUgU2lnbmluZyBDQSBSMzYCEBHh
 # oIZkh66CYIKNKPBResYwDQYJYIZIAWUDBAIBBQCgfDAQBgorBgEEAYI3AgEMMQIw
 # ADAZBgkqhkiG9w0BCQMxDAYKKwYBBAGCNwIBBDAcBgorBgEEAYI3AgELMQ4wDAYK
-# KwYBBAGCNwIBFTAvBgkqhkiG9w0BCQQxIgQgTk5zdt1XeBaDgQ+yjMsTqNh7CmQx
-# Xxax9BQIwMJkvEowDQYJKoZIhvcNAQEBBQAEggIAtCfo56ps/UGZijQRxf4s571p
-# aUB/LyiB+7QAsmzpwyHmKvs8Jj74r7Cgo36dubHeJVHJy4FxZjLBJaoGrqxqwZSl
-# Y6N8oO/A3oii4fc/wiXMKVgjY5yq2+SSd3tyCkLtLIjKjKjGIfGG/akVLeCaE58v
-# wWygbMGMQXqjy6X3zLQ2fMFjZYu6lU0ytMfro4CboWJ1FAqUzrBGfq+0PjpmcOku
-# hCGTM8dfI/1xBgLcdX10BesNy4I8klNsaU159vMmbjUgNWWcy/1tGRMz8QnJLrHZ
-# qYo3ZYNQClyoUa0GoSBjY4GzrfBsEBa7RRL9z0Y2FMunDbQtjZOVElCYZt+ocw5q
-# TjzyZbuTEdunHL0RYKLQPTZc5NPj2ewmQFStANVex/zjOsP2YAdX+sLbPJfldaZg
-# sD+uGC23yWDhFVOeJZ+TL+tnXWqqhm04vtB6wooO4H8M/13kE+QQFGP0wCynK2d3
-# +FdpuMaARDfufLTzf+vFsF5BWR+8YPFhY2G5mGefdLtJTb1O/Pigs68m6grueWP9
-# kcL/jd9PQJBQpJfnD/iPpXjL6xbWRhGHC1nWB1KAAc/kDaT7e7RRYeQcYrb3PfjD
-# OgtxzSmuI8bqwrFUml/3c/RizEBLqSjI1OcErCDIlmgOA662mku8nQ6ihMX98QEH
-# TlFWizQ4JWXJFbrpfS6hghNPMIITSwYKKwYBBAGCNwMDATGCEzswghM3BgkqhkiG
+# KwYBBAGCNwIBFTAvBgkqhkiG9w0BCQQxIgQgBlo2s5IcAMuxs4Xjm9z+46aGpXQ0
+# kFczh8g/aE4skncwDQYJKoZIhvcNAQEBBQAEggIAfyKswnStiQdc0BrnP21aCXQe
+# EH8nSI14mjSEnPAMaWWK6xG5HSzsifrxFTYcbtxzlFCAABV1quh51ksNEcEXVQtf
+# HFt4AJ4Jz5a9KYJ+yQeSaZy5Q6WKzQ0xF1E+TF2sG4MjKJaiBFlv64gvncEkJDTN
+# 3RizhppozC9GG34FPZagV+kY1CxvwM1nfAgBQJNMyvHuRLh/g4fQdUj1fL7Hjh2b
+# 0IW1dPP3V9aVVN4FQsmKMLvo1kv9GF7Gd+eGNLfGqs9YmGgbzNDig99eRASd2q9J
+# tcGEw8g9uril1LPbEG55UpQ2JXkTPQPacZ634raVXi6tmt3GuEPzYNC9Q5XM+ae4
+# EEdR3nf1JRRsihCW9zEaaZV8YM1ER6O8auwjCdBpvk04Xa0Q00M9DUYvHljpmsuX
+# eP3dJIfXZgnuh5RocbFH89EqgpbrpxG1LQKNmzk0UImmPtzAJXPQH3OlYUqMYxxh
+# FsuO7W87oL0m5QWQQVZtxjYD/CQLOMRGUmqx0I3Z3pja0RgO/3X6VyKufSYAsTwm
+# dxpsYa+skZx5cN1i67JUvuvpbmdW6wZg37QRTl68O0++ISRPvBwryoG5XYYWx1ny
+# 4KrRO1x72fgx9ufZACFANYskG5SDDCyumGrz9YuqFDDnsuTVFBJF4vbY/iGFUVpX
+# 5t1J8yZn/4PWCa/zvCGhghNPMIITSwYKKwYBBAGCNwMDATGCEzswghM3BgkqhkiG
 # 9w0BBwKgghMoMIITJAIBAzEPMA0GCWCGSAFlAwQCAgUAMIHwBgsqhkiG9w0BCRAB
-# BKCB4ASB3TCB2gIBAQYKKwYBBAGyMQIBATAxMA0GCWCGSAFlAwQCAQUABCDzH/7f
-# DbV7QzK0Q3y8Zp4SgCBeDnUYHY/+JKJUH0UHawIVAISuMt9vZFGXyZe9pBoeWbFq
-# In0gGA8yMDI0MDEyMDExMTAxNlqgbqRsMGoxCzAJBgNVBAYTAkdCMRMwEQYDVQQI
+# BKCB4ASB3TCB2gIBAQYKKwYBBAGyMQIBATAxMA0GCWCGSAFlAwQCAQUABCB525rB
+# fdZKhwhbZAh/wTkX9O/yWJpuQO+lVg3ZuFE1OwIVAIbQ683G/jtHk+MOJ+zZA2Ua
+# WYXdGA8yMDI0MDEyMDExMTAxNlqgbqRsMGoxCzAJBgNVBAYTAkdCMRMwEQYDVQQI
 # EwpNYW5jaGVzdGVyMRgwFgYDVQQKEw9TZWN0aWdvIExpbWl0ZWQxLDAqBgNVBAMM
 # I1NlY3RpZ28gUlNBIFRpbWUgU3RhbXBpbmcgU2lnbmVyICM0oIIN6TCCBvUwggTd
 # oAMCAQICEDlMJeF8oG0nqGXiO9kdItQwDQYJKoZIhvcNAQEMBQAwfTELMAkGA1UE
@@ -305,22 +285,22 @@ Write-host "Script completed."
 # TGltaXRlZDElMCMGA1UEAxMcU2VjdGlnbyBSU0EgVGltZSBTdGFtcGluZyBDQQIQ
 # OUwl4XygbSeoZeI72R0i1DANBglghkgBZQMEAgIFAKCCAWswGgYJKoZIhvcNAQkD
 # MQ0GCyqGSIb3DQEJEAEEMBwGCSqGSIb3DQEJBTEPFw0yNDAxMjAxMTEwMTZaMD8G
-# CSqGSIb3DQEJBDEyBDAkSxM0pDNub3TTdp2xf8DMtpEwOpPbqJ+GMyKrqyDwSLsm
-# r2R8c85cufo30b78N8wwge0GCyqGSIb3DQEJEAIMMYHdMIHaMIHXMBYEFK5ir3UK
+# CSqGSIb3DQEJBDEyBDBLPfpk9QnKvrljz66V3XcblToNy/BIXhCsA+6ll5lli5bu
+# apaEiOWSuEoN9TWTeU8wge0GCyqGSIb3DQEJEAIMMYHdMIHaMIHXMBYEFK5ir3UK
 # DL1H1kYfdWjivIznyk+UMIG8BBQC1luV4oNwwVcAlfqI+SPdk3+tjzCBozCBjqSB
 # izCBiDELMAkGA1UEBhMCVVMxEzARBgNVBAgTCk5ldyBKZXJzZXkxFDASBgNVBAcT
 # C0plcnNleSBDaXR5MR4wHAYDVQQKExVUaGUgVVNFUlRSVVNUIE5ldHdvcmsxLjAs
 # BgNVBAMTJVVTRVJUcnVzdCBSU0EgQ2VydGlmaWNhdGlvbiBBdXRob3JpdHkCEDAP
-# b6zdZph0fKlGNqd4LbkwDQYJKoZIhvcNAQEBBQAEggIAcWUFN5I0Hcey1wz3veGv
-# jYULQdFwviGxgnGzvYDaDprpVXd3UFZsI7iojcQWsva4c4dQcPf1ugxFYe3b5itw
-# 2gDF0jYO07bQDFI0NQiJHJE0pfmFXx0gi3BNasdNbdnsbUlFpMT1Zmf93NXtbTu4
-# RRE7UcNFKkqSG3mOVCosbzsrIgADWk+o5NZjWIDSlSeJy9Gf8ip6ft/uSZQiD86u
-# XYyvs5xnef1LP9+Xe+7YL7KBjM0KbB4vGVbHds03Oxv0IeooB1AytakqSVJi5DgY
-# WSHEMhSR81UD4DlG4DaiFlFmPCWaijMtfocmlFpQrML9wKsKs4ZoY8xPKpmaGuGy
-# WAhs+NuhWC33TOwLTuefNBNXCHF1D4m5xV03dRdtNdgCoA2I5HFxcwzSutmkNGXs
-# KZQhgkRoFljKM+r7H27t1WDBgVU/Uey6jDRiw6X4/hZPdnvHhBozSizFEb2C5vzg
-# 0Kzu+KFs18h6QA1ik+KKwIfstAqCBBG0Dah5gEDHniGGcPCGH3CCVXKBT8aYSoA/
-# 8gePHNRqsKR34fiPD7H2Zt/Jw/+t0HmGjtXU3xcicXMBWWb8AHrF4oZIWpDaYtT0
-# 6qfCMLzd4vKEiURxjgabOYFoL9Fb0Cn38sM7v53mKQMI9vRSlVdjq1p7oWiKfg48
-# 5YmwNLeiTm3D0N2plhDzwvw=
+# b6zdZph0fKlGNqd4LbkwDQYJKoZIhvcNAQEBBQAEggIAbVRaFcnvXY/o8MNBEhVq
+# Czx6Laj6FVAKLY8ha3iqErGUnR54iSuFoguZSuwuPSnBXMzTH1qIYHHlBEKCk++M
+# 6iHECvfzTBiAvb4g/xutqq/ifxc6a2/ilCs/eaUm5pvGonrqGDlh3Xe3wKB+Wfns
+# I7lzUDcf6A49uymy6MKKvPT4IG0BMHrA0Xb6kd8xnwk6J9loIkqQ4/Wd9wfZb7Yo
+# R1eJAfegBLMEqd3WxD62juapgJM5ZReCnx5Ghub+UzhUqmYnt1cICiBSUmOQrQ+a
+# ZrM5YKk0Jje2mT8sz3EXelh2WQmE3/cVj6rLu4ekfZEhpfYbC7Lt1xTECNoSmoQg
+# xej2LSPtdcuBHsYV1fkgpeGgTqseWuWhNWP3Qj+SGgDEMF3TCHqX854q2R56ITdZ
+# M8HCQZ+Eyjgr5cl7miqyFGAcI1o5AxxXA30vG8ghcnx16pDe2DLnSOyZYO/iqanc
+# d24QdKYgM8hSH2dnVEfjte8DaBN5XxepVFKdDmQTCsXMFufmDCm3ETLuLWtKa1RI
+# yuRF/r9NRukrRAepR3lgkcyzijgIQJT+8AZKrxww5Jk3+69K1bFHK6PzogqS2d1W
+# XURBgiRm5fTmjr9WIzsaHZAh7d706WpEwDkiwVhZx/jHZaYFG4YhNeZfIsmTsQXP
+# KO0KWctf4+MPhRkjiSs8AGI=
 # SIG # End signature block
