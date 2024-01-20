@@ -2,7 +2,7 @@
 	.NOTES
 	===========================================================================
 	 Created with: 	SAPIEN Technologies, Inc., PowerShell Studio 2022 v5.8.213
-	 Created on:   	18-01-2024 19:23
+	 Created on:   	20-01-2024 10:58
 	 Created by:   	Michael Morten Sonne
 	 Organization: 	Sonne´s Cloud
 	 Filename:     	"1 - Install the Sensor - arguments.ps1"
