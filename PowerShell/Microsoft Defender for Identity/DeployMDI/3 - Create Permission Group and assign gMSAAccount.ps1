@@ -71,21 +71,32 @@ if(Get-ADServiceAccount -Identity $gMSA_AccountName -ErrorAction SilentlyContinu
     $gMSA_AccountName = $group.Name
 }
 
-# Get the deleted objects container's distinguished name:
-$distinguishedName = ([adsi]'').distinguishedName.Value
-$deletedObjectsDN = 'CN=Deleted Objects,{0}' -f $distinguishedName
+# Check if the recycle bin is enabled in Active Directory, if yes delegate permission to the deleted objects container for the gMSA account
+$RecycleBinEnabled = (Get-ADOptionalFeature -Filter 'name -like "Recycle Bin Feature"' -ErrorAction SilentlyContinue).EnabledScopes
+If ($RecycleBinEnabled -and $gMSA_AccountName) {
+    Write-Output "Delegating permissions to Deleted Objects container" -ForegroundColor Yellow
+    
+    Start-Sleep -Seconds 3
+    
+    # Get the deleted objects container's distinguished name:
+    $distinguishedName = ([adsi]'').distinguishedName.Value
+    $deletedObjectsDN = 'CN=Deleted Objects,{0}' -f $distinguishedName
 
-# Take ownership on the deleted objects container:
-$params = @("$deletedObjectsDN", '/takeOwnership')
-C:\Windows\System32\dsacls.exe $params
+    # Take ownership on the deleted objects container:
+    $params = @("$deletedObjectsDN", '/takeOwnership')
+    C:\Windows\System32\dsacls.exe $params
 
-# Grant the "List Contents" and "Read Property" permissions to the user or group:
-$params = @("$deletedObjectsDN", '/G', ('{0}\{1}:LCRP' -f ([adsi]'').name.Value, $gMSA_AccountName))
-C:\Windows\System32\dsacls.exe $params
-  
-# To revoke the permissions, uncomment the following two lines and execute them in place of the preceding two lines:
-# $params = @("$deletedObjectsDN", '/R', ('{0}\{1}' -f ([adsi]'').name.Value, $gMSA_AccountName))
-# C:\Windows\System32\dsacls.exe $params
+    # Grant the "List Contents" and "Read Property" permissions to the user or group:
+    $params = @("$deletedObjectsDN", '/G', ('{0}\{1}:LCRP' -f ([adsi]'').name.Value, $gMSA_AccountName))
+    C:\Windows\System32\dsacls.exe $params
+    
+    # To revoke the permissions, uncomment the following two lines and execute them in place of the preceding two lines:
+    # $params = @("$deletedObjectsDN", '/R', ('{0}\{1}' -f ([adsi]'').name.Value, $gMSA_AccountName))
+    # C:\Windows\System32\dsacls.exe $params
+}
+else {
+    Write-Warning "AD Recycle Bin is not enabled, so no permissions delegated" -ForegroundColor Yellow
+}
 
 # Script completed
 Write-host "Script completed."
