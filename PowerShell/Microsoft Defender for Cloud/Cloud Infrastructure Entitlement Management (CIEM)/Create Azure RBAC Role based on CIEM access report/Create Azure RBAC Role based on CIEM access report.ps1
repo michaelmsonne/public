@@ -24,6 +24,7 @@
 
     .CHANGELOG
         05-01-2024 - Michael Morten Sonne - Initial release
+        06-02-2024 - Michael Morten Sonne - Some small changes to the script (some work done too before here but not documented)
 
 	.EXAMPLE
         Create a custom Azure RBAC role based on CIEM access report in CSV format
