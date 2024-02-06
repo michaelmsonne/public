@@ -36,6 +36,9 @@ param (
     [string]$CsvFilePath,
 
     [Parameter(Mandatory=$false)]
+    [switch]$GridView = $null,
+
+    [Parameter(Mandatory=$false)]
     [string]$ResourceGroup
 )
 
@@ -175,15 +178,29 @@ if ($usedData.Count -gt 0) {
     $uniqueAccessScopes = $accessScopes | Sort-Object -Unique
     $numberOfAccessScopes = $uniqueAccessScopes.Count
 
-    # Display the unique access scopes and count
-    Write-Host "Unique access scopes were discovered within the exported file '$csvFileName' and are intended for use in a custom Azure RBAC role:`n"
-    
-    # Display the unique access scopes
-    $uniqueAccessScopes
+    # Display the unique access scopes and count in a grid view or in the console
+    if ($GridView){
+        # Create a custom object with renamed columns
+        $customuniqueAccessScopes = $uniqueAccessScopes | ForEach-Object {
+            [PSCustomObject]@{
+                'Custom Azure RBAC Scopes to use in new role' = $_ # Custom column name
+            }
+        }
 
-    # Display the number of unique access scopes
-    Write-Host "`nNumber of Unique Access Scopes: " -NoNewline
-    Write-Host $numberOfAccessScopes `n -ForegroundColor Yellow
+        # Display the unique access scopes and count in a grid view
+        $customuniqueAccessScopes | Out-GridView -Title "$numberOfAccessScopes Unique access scopes discovered within the exported file '$csvFileName' and are intended for use in a new custom Azure RBAC role" -PassThru
+    }
+    else {
+        # Display the unique access scopes and count
+        Write-Host "Unique access scopes were discovered within the exported file '$csvFileName' and are intended for use in a new custom Azure RBAC role:`n"
+        
+        # Display the unique access scopes
+        $uniqueAccessScopes
+
+        # Display the number of unique access scopes
+        Write-Host "`nNumber of Unique Access Scopes: " -NoNewline
+        Write-Host $numberOfAccessScopes `n -ForegroundColor Yellow
+    }
 } else {
     # No 'used' data found in the CSV file - abort
     Write-Host "`nNo 'used' data found. Aborting..."
