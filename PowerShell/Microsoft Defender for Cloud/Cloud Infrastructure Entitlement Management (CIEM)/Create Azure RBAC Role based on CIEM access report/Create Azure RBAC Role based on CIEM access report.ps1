@@ -44,11 +44,8 @@ function Invoke-Script
     .SYNOPSIS
         Displays info about this script and its functions.
 
-    .PARAMETER 
-        -h (Help)
-
     .EXAMPLE 
-        Invoke-Script -h
+        Invoke-Script -Banner
     #>
 
     [CmdletBinding()]
