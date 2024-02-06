@@ -5,7 +5,7 @@
 	 Created on:   	05-01-2024 18:41
 	 Created by:   	Michael Morten Sonne
 	 Organization: 	Sonne´s Cloud
-     Blog:          https://blog.sonnes.cloud
+	 Blog:          https://blog.sonnes.cloud
 	 Filename:     	'Create Azure RBAC Role based on CIEM access report - used access scopes.ps1'
 	===========================================================================
 	.DESCRIPTION
