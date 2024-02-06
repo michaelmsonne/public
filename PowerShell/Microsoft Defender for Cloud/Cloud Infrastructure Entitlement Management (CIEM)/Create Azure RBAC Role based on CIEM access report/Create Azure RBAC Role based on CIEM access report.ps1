@@ -24,11 +24,14 @@
 
     .CHANGELOG
         05-01-2024 - Michael Morten Sonne - Initial release
-        06-02-2024 - Michael Morten Sonne - Some small changes to the script (some work done too before here but not documented)
+        06-02-2024 - Michael Morten Sonne - Some small changes to the script and add GridView for large datasets if needed (some work done too before here but not documented)
 
 	.EXAMPLE
-        Create a custom Azure RBAC role based on CIEM access report in CSV format
-        PS C:\> .\'Create Azure RBAC Role based on CIEM access report - used access scopes.ps1' -CsvFilePath "C:\Users\MichaelMortenSonne\Actions.csv"        		
+        Create a custom Azure RBAC role based on CIEM access report in CSV format and display the unique access scopes and count in the console
+        PS C:\> .\'Create Azure RBAC Role based on CIEM access report - used access scopes.ps1' -CsvFilePath "C:\Users\MichaelMortenSonne\Actions.csv"
+
+        Create a custom Azure RBAC role based on CIEM access report in CSV format and display the unique access scopes and count in a grid view (usefull for large datasets)
+        PS C:\> .\'Create Azure RBAC Role based on CIEM access report - used access scopes.ps1' -GridView -CsvFilePath "C:\Users\MichaelMortenSonne\Actions.csv"
 #>
 
 param (
