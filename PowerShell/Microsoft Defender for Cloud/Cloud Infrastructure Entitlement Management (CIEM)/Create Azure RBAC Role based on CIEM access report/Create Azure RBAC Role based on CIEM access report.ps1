@@ -1,12 +1,12 @@
 <#	
 	.NOTES
 	===========================================================================
-    Created with: 	SAPIEN Technologies, Inc., PowerShell Studio 2022 v5.8.213
-    Created on:   	05-01-2024 18:41
-    Created by:   	Michael Morten Sonne
-    Organization: 	Sonne´s Cloud
-    Blog:          https://blog.sonnes.cloud
-    Filename:     	'Create Azure RBAC Role based on CIEM access report - used access scopes.ps1'
+	 Created with: 	SAPIEN Technologies, Inc., PowerShell Studio 2022 v5.8.213
+	 Created on:   	05-01-2024 18:41
+	 Created by:   	Michael Morten Sonne
+	 Organization: 	Sonne´s Cloud
+     Blog:          https://blog.sonnes.cloud
+	 Filename:     	'Create Azure RBAC Role based on CIEM access report - used access scopes.ps1'
 	===========================================================================
 	.DESCRIPTION
 		PowerShell script to create custom Azure RBAC role based on output from CIEM access report in CSV format.
