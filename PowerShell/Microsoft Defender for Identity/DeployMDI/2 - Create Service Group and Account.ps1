@@ -25,6 +25,22 @@ $gMSA_HostNames = 'ADDC01', 'ADDC02', 'ADCS', 'ADFS01', 'ADFS02'
 # Import the required PowerShell module for Active Directory
 Import-Module ActiveDirectory
 
+# Check if the domain is ready for gMSA
+if ($domainFunctionalLevel -lt 'Windows2012R2Domain') {
+    Throw "Domain functional level needs to be at least 2012 R2 for full gMSA functionality.`nUpgrade domain functional level."
+}
+
+# Get the schema version
+$schemaVersion = (Get-ADObject (Get-ADRootDSE).schemaNamingContext -Property objectversion).objectVersion
+
+# Check if the schema is ready for gMSA accounts
+if ($schemaVersion -le 56) {
+    Throw "AD schema needs to be at least Windows Server 2012 for gMSA accounts.`nUpgrade schema."
+}
+
+# If both checks pass, the domain and schema are ready for gMSA functionality
+Write-Host "Domain and schema are ready for gMSA functionality." -ForegroundColor Green
+
 # Create the group for the gMSA account to be a member of (if it does not already exist):
 try {
     # Create the group
