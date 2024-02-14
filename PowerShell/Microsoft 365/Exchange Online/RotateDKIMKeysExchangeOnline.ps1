@@ -22,16 +22,12 @@
         .\RotateDKIMKeysExchangeOnline.ps1
 #>
 
-## Variables
-$processmessagecolor = "green"
-$errormessagecolor = "red"
-
 #Check for module availability
 Write-host "Check for module availability..." 
 $ExchangeOnlineManagement = (get-module ExchangeOnlineManagement -ListAvailable).Name 
 if($null -eq $ExchangeOnlineManagement)
 {
-	Write-host -ForegroundColor $errormessagecolor "Important: Module ExchangeOnlineManagement is unavailable. It is mandatory to have this module installed in the system to run the script successfully."
+	Write-host -ForegroundColor Yellow "Important: Module ExchangeOnlineManagement is unavailable. It is mandatory to have this module installed in the system to run the script successfully."
 	$confirm= Read-Host Are you sure you want to install module? [Y] Yes [N] No  
 	if($confirm -match "[yY]")
 	{
@@ -61,13 +57,13 @@ Write-host "Checking if connected to Exchange Online..."
 $ModulesLoaded = Get-Module | Select-Object Name
 If (!($ModulesLoaded -match "ExchangeOnlineManagement")) {
    # Not connected to Exchange Online
-   Write-host -ForegroundColor $errormessagecolor "You're not connected to Exchange Online! Make sure you have ExchangeOnlineManagement mudule available on this system then use Connect-ExchangeOnline to establish connection!"; 
+   Write-host -ForegroundColor Red "You're not connected to Exchange Online! Make sure you have ExchangeOnlineManagement mudule available on this system then use Connect-ExchangeOnline to establish connection!"; 
    exit;
 }
 else
 {
     # Connected to Exchange Online
-    Write-host -ForegroundColor $processmessagecolor "Done - Connected to Exchange Online!"
+    Write-host -ForegroundColor Green "Done - Connected to Exchange Online!"
 }
 
 #Get all domains to rotete DKIM keys for all enabled domains in the tenant that are not *.onmicrosoft.com
@@ -76,12 +72,12 @@ $Domains = (Get-DkimSigningConfig | Where-Object { $_.Domain -NotLike '*.onmicro
 # Rotate the DKIM keys for each domain in the list there is active
 foreach ($domain in $domains){
     # Rotate the DKIM keys
-    Write-host -ForegroundColor $processmessagecolor "Rotating the DKIM keys for $domain..."
+    Write-host -ForegroundColor Green "Rotating the DKIM keys for $domain..."
     Rotate-DkimSigningConfig -KeySize 2048 -Identity $domain
 }
 
 # Done - Rotate the DKIM keys for all enabled domains
-Write-host -ForegroundColor $processmessagecolor "Done - Rotate the DKIM keys for all enabled domains!"
+Write-host -ForegroundColor Green "Done - Rotate the DKIM keys for all enabled domains!"
 
 # Disconnect from Exchange Online
 Disconnect-ExchangeOnline -Confirm:$false
