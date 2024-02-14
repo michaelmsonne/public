@@ -52,17 +52,17 @@ if($null -eq $ExchangeOnlineManagement)
 Import-Module ExchangeOnlineManagement
 
 # Connect to Exchange Online
-Connect-ExchangeOnline # -Organization yourorg.onmicrosoft.com # Replace yourorg.onmicrosoft.com with your organization's name
+Connect-ExchangeOnline -ShowBanner:$false # -Organization yourorg.onmicrosoft.com # Replace yourorg.onmicrosoft.com with your organization's name
 
 #Test if connected to Exchange Online
-Write-host -ForegroundColor $processmessagecolor "Checking if connected to Exchange Online..."
-$getsessions = Get-PSSession | Select-Object -Property State, Name
-$isconnected = (@($getsessions) -like '@{State=Opened; Name=ExchangeOnlineInternalSession*').Count -gt 0
-If ($isconnected -ne "True")
-{
-    # Not connected to Exchange Online
-    Write-host -ForegroundColor $errormessagecolor "You're not connected to Exchange Online! Make sure you have ExchangeOnlineManagement mudule available on this system then use Connect-ExchangeOnline to establish connection!"; 
-    exit;
+Write-host "Checking if connected to Exchange Online..."
+
+# Check if connected to Exchange Online
+$ModulesLoaded = Get-Module | Select-Object Name
+If (!($ModulesLoaded -match "ExchangeOnlineManagement")) {
+   # Not connected to Exchange Online
+   Write-host -ForegroundColor $errormessagecolor "You're not connected to Exchange Online! Make sure you have ExchangeOnlineManagement mudule available on this system then use Connect-ExchangeOnline to establish connection!"; 
+   exit;
 }
 else
 {
