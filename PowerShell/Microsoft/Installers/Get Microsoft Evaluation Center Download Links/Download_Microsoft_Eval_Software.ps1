@@ -10,7 +10,7 @@
         Get Microsoft Evaluation Center Download Links and export to CSV file.
          
       EXAMPLE
-         PS > .\Download_Microsoft_Eval_Software.ps1 -outputfile 'C:\CustomPath\CustomEvalCenterDownloads.csv'
+         PS > .\Download_Microsoft_Eval_Software.ps1 -outputfile 'C:\Folder\EvalCenterDownloads.csv'
 #>
 
 param (
