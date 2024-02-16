@@ -10,7 +10,7 @@
 	===========================================================================
 	.DESCRIPTION
 		PowerShell script to enable TLS 1.2 on Windows. The script sets the registry keys to enable TLS 1.2 on the machine and displays a message to restart the machine for the changes to take effect.
-        Is a need for Azure AD Connect V2.x
+		Is a need for Azure AD Connect V2.x
 
     .REQUREMENT
         - Administrator rights on the machine
