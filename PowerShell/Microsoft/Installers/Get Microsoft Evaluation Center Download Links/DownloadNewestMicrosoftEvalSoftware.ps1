@@ -4,13 +4,18 @@
 	 Created on:    14-01-2023 10:25
 	 Created by:    Michael Morten Sonne
 	 Organization: 	
-	 Filename:     	Download_Microsoft_Eval_Software.ps1
+	 Filename:     	DownloadNewestMicrosoftEvalSoftware.ps1
 	===========================================================================
 	.DESCRIPTION
-        Get Microsoft Evaluation Center Download Links and export to CSV file.
+        This PowerShell script retrieves download links for the latest Microsoft Evaluation Center software releases.
+        It scans a predefined list of URLs, extracts relevant information such as software title, name, tag, format, and download link, and exports the details to a CSV file.
+        The exported CSV file serves as a convenient reference for users to access the latest Microsoft evaluation software downloads from the Evaluation Center for testing and evaluation purposes faster.
+
+    .PARAMETER outputfile
+        The path to the CSV file where the download links will be exported. If not specified, the default path is C:\Temp\EvalCenterDownloads.csv.
          
       EXAMPLE
-         PS > .\Download_Microsoft_Eval_Software.ps1 -outputfile 'C:\Folder\EvalCenterDownloads.csv'
+         PS > .\DownloadNewestMicrosoftEvalSoftware.ps1 -outputfile 'C:\Folder\EvalCenterDownloads.csv'
 #>
 
 param (
@@ -22,7 +27,6 @@ $totalcount = $null
  
 #List of Evalution Center links with downloadable content
 $urls = @(
-    'https://www.microsoft.com/en-us/evalcenter/download-biztalk-server-2016',
     'https://www.microsoft.com/en-us/evalcenter/download-host-integration-server-2020',
     'https://www.microsoft.com/en-us/evalcenter/download-hyper-v-server-2016',
     'https://www.microsoft.com/en-us/evalcenter/download-hyper-v-server-2019',
