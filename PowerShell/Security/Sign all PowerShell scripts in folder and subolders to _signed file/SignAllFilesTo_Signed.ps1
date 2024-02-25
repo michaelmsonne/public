@@ -4,6 +4,7 @@
      Created on:    17-04-2022 22:34
 	 Updated on:    25-02-2024 14:39
      Created by:    Michael Morten Sonne
+     Blog:          https://blog.sonnes.cloud
      Organization:  Sonne´s Cloud
 	 Name:          SignAllFilesTo_Signed
      Filename:      SignAllFilesTo_Signed.ps1
