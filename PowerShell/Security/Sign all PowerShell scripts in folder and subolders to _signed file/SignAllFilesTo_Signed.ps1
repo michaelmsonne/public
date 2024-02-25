@@ -51,7 +51,8 @@ Param (
     [Parameter(Mandatory=$true)]
     [string]$Thumbprint,
     [string]$TimestampServer = "http://timestamp.sectigo.com",
-    [switch]$WhatIf
+    [switch]$WhatIf,
+    [bool]$Force # TODO: Implement the Force parameter to overwrite existing signed files
 )
 
 # Initialize error count
