@@ -52,7 +52,7 @@ Param (
     [string]$Thumbprint,
     [string]$TimestampServer = "http://timestamp.sectigo.com",
     [switch]$WhatIf,
-    [bool]$Force # TODO: Implement the Force parameter to overwrite existing signed files
+    [switch]$Force # TODO: Implement the Force parameter to overwrite existing signed files
 )
 
 # Initialize error count
@@ -100,6 +100,48 @@ $separator
     Write-Host ""
 }
 
+function Show-EndRedLine {
+    $separator = "=" * 80
+    $header = @"
+$separator
+"@
+    Write-Host $header -ForegroundColor Red
+    Write-Host ""
+}
+
+function Show-RemovedFileOverview {
+    param (
+        [string]$FilePath
+    )
+
+    if ($WhatIf) {
+        Write-Host -ForegroundColor Red "WhatIf: " -NoNewline
+        Write-Host "The file '" -NoNewline
+        Write-Host -ForegroundColor Green $FilePath -NoNewline
+        Write-Host "' would be removed." -NoNewline
+    } else {
+        Write-Host "Removed file: " -NoNewline  -ForegroundColor Red
+        Write-Host "'$FilePath'" -ForegroundColor Yellow
+    }
+}
+
+function Show-RemoveFileOverview {
+    param (
+        [string]$FilePath
+    )
+
+    $separator = "=" * 80
+    $header = @"
+$separator
+                               File(s) removal
+$separator
+"@
+    Write-Host $header -ForegroundColor Red
+    Write-Host ""
+}
+
+# Main script logic starts here
+
 try {
     # Get the code signing certificate from the current user store using the thumbprint
     $certificate = Get-ChildItem -Path Cert:\CurrentUser\My\$Thumbprint -CodeSigningCert -ErrorAction Stop | Select-Object -First 1
@@ -125,6 +167,51 @@ if (-not $Path) {
 if (-not (Test-Path -Path $Path -PathType Container)) {
     Write-Host "The specified path '$Path' is not a valid directory."
     Exit
+}
+
+# If -Force is set, delete all _signed.ps1 files in the specified directory and its subdirectories
+# Check if -Force argument is set
+if ($Force) {
+    # Get all .ps1 files in the specified directory and its subdirectories
+    $scriptFiles = Get-ChildItem -Path $Path -Recurse -Filter *.ps1
+
+    # Filter out files with "_signed.ps1" and remove them
+    $signedFiles = $scriptFiles | Where-Object { $_.Name -like '*_signed.ps1' }
+
+    if ($signedFiles.Count -gt 0) {
+        # Show removed file overview
+        Show-RemoveFileOverview
+
+        if ($WhatIf) {
+            # If -WhatIf is set, simulate the removal
+            $signedFiles | ForEach-Object {
+                Show-RemovedFileOverview -FilePath $_.FullName
+                Write-Host ""
+            }
+            Write-Host ""
+            Write-Host "The scripts are not deleted yet, because the -WhatIf parameter is used." -ForegroundColor Red
+        } else {
+            # Remove the files
+            $signedFiles | ForEach-Object {
+                # Remove the file
+                Remove-Item $_.FullName -Force
+
+                # Show removed file overview to console
+                Show-RemovedFileOverview -FilePath $_.FullName
+            }
+            Write-Host ""
+            Write-Host "The scripts are being deleted because the -Force argument is specified." -ForegroundColor Red
+        }
+
+        Write-Host ""
+        Show-EndRedLine
+
+    } else {
+        Write-Host "The -Force argument is specified, but no '_signed.ps1' files were found for removal." -ForegroundColor Yellow
+        Write-Host ""
+    }
+} else {
+    Write-Host "The -Force argument is required to remove '_signed.ps1' files. No files were removed." -ForegroundColor Yellow
 }
 
 # If path exists, certificate exists, and hash is valid, then run The script
@@ -233,7 +320,6 @@ if ($Path -and $certificate -and $Hash -match "^(MD5|SHA1|SHA256)$") {
                     Write-Host ", issued by: " -NoNewline
                     Write-Host -ForegroundColor Yellow "'$($certificate.Issuer)'" -NoNewline
                     Write-Host ", hash type: '$Hash', and timestamp server: '$TimestampServer'!"
-                    Write-Host -ForegroundColor Cyan "Original script: $scriptPath"
                     Write-Host ""
 
                     # Copy to _signed file
@@ -279,6 +365,7 @@ if ($Path -and $certificate -and $Hash -match "^(MD5|SHA1|SHA256)$") {
     if ($WhatIf)
     {
         Write-Host -ForegroundColor Red "The scripts are not signed yet, because the -WhatIf parameter is used."
+        Write-Host ""
     }
     else {
         if ($errorCount -eq 0)

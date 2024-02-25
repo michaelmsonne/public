@@ -52,7 +52,7 @@ Param (
     [string]$Thumbprint,
     [string]$TimestampServer = "http://timestamp.sectigo.com",
     [switch]$WhatIf,
-    [bool]$Force # TODO: Implement the Force parameter to overwrite existing signed files
+    [switch]$Force # TODO: Implement the Force parameter to overwrite existing signed files
 )
 
 # Initialize error count
@@ -100,6 +100,48 @@ $separator
     Write-Host ""
 }
 
+function Show-EndRedLine {
+    $separator = "=" * 80
+    $header = @"
+$separator
+"@
+    Write-Host $header -ForegroundColor Red
+    Write-Host ""
+}
+
+function Show-RemovedFileOverview {
+    param (
+        [string]$FilePath
+    )
+
+    if ($WhatIf) {
+        Write-Host -ForegroundColor Red "WhatIf: " -NoNewline
+        Write-Host "The file '" -NoNewline
+        Write-Host -ForegroundColor Green $FilePath -NoNewline
+        Write-Host "' would be removed." -NoNewline
+    } else {
+        Write-Host "Removed file: " -NoNewline  -ForegroundColor Red
+        Write-Host "'$FilePath'" -ForegroundColor Yellow
+    }
+}
+
+function Show-RemoveFileOverview {
+    param (
+        [string]$FilePath
+    )
+
+    $separator = "=" * 80
+    $header = @"
+$separator
+                               File(s) removal
+$separator
+"@
+    Write-Host $header -ForegroundColor Red
+    Write-Host ""
+}
+
+# Main script logic starts here
+
 try {
     # Get the code signing certificate from the current user store using the thumbprint
     $certificate = Get-ChildItem -Path Cert:\CurrentUser\My\$Thumbprint -CodeSigningCert -ErrorAction Stop | Select-Object -First 1
@@ -125,6 +167,51 @@ if (-not $Path) {
 if (-not (Test-Path -Path $Path -PathType Container)) {
     Write-Host "The specified path '$Path' is not a valid directory."
     Exit
+}
+
+# If -Force is set, delete all _signed.ps1 files in the specified directory and its subdirectories
+# Check if -Force argument is set
+if ($Force) {
+    # Get all .ps1 files in the specified directory and its subdirectories
+    $scriptFiles = Get-ChildItem -Path $Path -Recurse -Filter *.ps1
+
+    # Filter out files with "_signed.ps1" and remove them
+    $signedFiles = $scriptFiles | Where-Object { $_.Name -like '*_signed.ps1' }
+
+    if ($signedFiles.Count -gt 0) {
+        # Show removed file overview
+        Show-RemoveFileOverview
+
+        if ($WhatIf) {
+            # If -WhatIf is set, simulate the removal
+            $signedFiles | ForEach-Object {
+                Show-RemovedFileOverview -FilePath $_.FullName
+                Write-Host ""
+            }
+            Write-Host ""
+            Write-Host "The scripts are not deleted yet, because the -WhatIf parameter is used." -ForegroundColor Red
+        } else {
+            # Remove the files
+            $signedFiles | ForEach-Object {
+                # Remove the file
+                Remove-Item $_.FullName -Force
+
+                # Show removed file overview to console
+                Show-RemovedFileOverview -FilePath $_.FullName
+            }
+            Write-Host ""
+            Write-Host "The scripts are being deleted because the -Force argument is specified." -ForegroundColor Red
+        }
+
+        Write-Host ""
+        Show-EndRedLine
+
+    } else {
+        Write-Host "The -Force argument is specified, but no '_signed.ps1' files were found for removal." -ForegroundColor Yellow
+        Write-Host ""
+    }
+} else {
+    Write-Host "The -Force argument is required to remove '_signed.ps1' files. No files were removed." -ForegroundColor Yellow
 }
 
 # If path exists, certificate exists, and hash is valid, then run The script
@@ -233,7 +320,6 @@ if ($Path -and $certificate -and $Hash -match "^(MD5|SHA1|SHA256)$") {
                     Write-Host ", issued by: " -NoNewline
                     Write-Host -ForegroundColor Yellow "'$($certificate.Issuer)'" -NoNewline
                     Write-Host ", hash type: '$Hash', and timestamp server: '$TimestampServer'!"
-                    Write-Host -ForegroundColor Cyan "Original script: $scriptPath"
                     Write-Host ""
 
                     # Copy to _signed file
@@ -279,6 +365,7 @@ if ($Path -and $certificate -and $Hash -match "^(MD5|SHA1|SHA256)$") {
     if ($WhatIf)
     {
         Write-Host -ForegroundColor Red "The scripts are not signed yet, because the -WhatIf parameter is used."
+        Write-Host ""
     }
     else {
         if ($errorCount -eq 0)
@@ -306,8 +393,8 @@ else
 # SIG # Begin signature block
 # MIIm2wYJKoZIhvcNAQcCoIImzDCCJsgCAQExDzANBglghkgBZQMEAgEFADB5Bgor
 # BgEEAYI3AgEEoGswaTA0BgorBgEEAYI3AgEeMCYCAwEAAAQQH8w7YFlLCE63JNLG
-# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCD37XhVBZ1JNDjH
-# T9vDnXw8VnHMatKVKGQb0vy17RdhXqCCH8gwggVvMIIEV6ADAgECAhBI/JO0YFWU
+# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCCRvqy2fiu9bDiC
+# kM6PYJeDyCwix+NgaDGUIZlmvV3hTqCCH8gwggVvMIIEV6ADAgECAhBI/JO0YFWU
 # jTanyYqJ1pQWMA0GCSqGSIb3DQEBDAUAMHsxCzAJBgNVBAYTAkdCMRswGQYDVQQI
 # DBJHcmVhdGVyIE1hbmNoZXN0ZXIxEDAOBgNVBAcMB1NhbGZvcmQxGjAYBgNVBAoM
 # EUNvbW9kbyBDQSBMaW1pdGVkMSEwHwYDVQQDDBhBQUEgQ2VydGlmaWNhdGUgU2Vy
@@ -481,35 +568,35 @@ else
 # IExpbWl0ZWQxKzApBgNVBAMTIlNlY3RpZ28gUHVibGljIENvZGUgU2lnbmluZyBD
 # QSBSMzYCEBHhoIZkh66CYIKNKPBResYwDQYJYIZIAWUDBAIBBQCggYQwGAYKKwYB
 # BAGCNwIBDDEKMAigAoAAoQKAADAZBgkqhkiG9w0BCQMxDAYKKwYBBAGCNwIBBDAc
-# BgorBgEEAYI3AgELMQ4wDAYKKwYBBAGCNwIBFTAvBgkqhkiG9w0BCQQxIgQgwMgd
-# jfBSan8zuBW2QzYWlMW4+Q2dsXHBfC5E+6JJHF0wDQYJKoZIhvcNAQEBBQAEggIA
-# sx24sVjZpQqGomP4MwQ4ckQfPYMBii5Vn3wcgUqTg7GLK643Zb83Q9RNvz7dkdzk
-# DO3GsScFv/lTeQmp9WPqRa0b2lxPhtrDqQIGLy0Kz8ahSofdA2Sm5cD6Feqo8fL7
-# fpoBSnKrHrHHiUjg83F4MxE/mNDlB7e5ntOiSIBPyqj1BFsfprsuhceNMg3zbIAJ
-# WAUR9/3816EyoHrjiTqd0AgnVobl4zW1YHix/vf5u1ezKSHIakX0d+cngbwENmC8
-# IcBTvHbM/4PjGiLgxHl3gT9N9eLvNJJJDA62ABLxqtF+wICZKHkBlTAiqxwD4tHA
-# IjZ5yCN356dqE8a89GKVM9UyRAZ2mnvLpPEqLfaoXZPU7IOPNOGaytDB7LjCnGJ/
-# g+f0FLAegQf3lDV11ST+m3Laa+gsHX9+8YmkENRouFttFNtDc18txUeeOuAxxHcw
-# s+fd8dJVi3NCIQbMm9WwKtD0dTNxo4zUFnCarIDX0ZkSM40+rNufGRk9CjWu0O6g
-# 7x397dnRb2MydiwnTbc+cP39tfBPxc4OI0NO2HfPUjojdzv078OXqYTnml/zPmSi
-# 87i/b4cSfwa7MvZj5p5s9kv3isx57HCdc5y/OSyGMguLa/kaB0r62t4myRDj9o0T
-# /XVbIOSFQ9Mwu48XysNMLuMCjCUN5DAsOJg2tJsrgsihggNLMIIDRwYJKoZIhvcN
+# BgorBgEEAYI3AgELMQ4wDAYKKwYBBAGCNwIBFTAvBgkqhkiG9w0BCQQxIgQgplse
+# xFJ7F5gIvI2vj3pNxIiqt5RizDjsMVXWyQ7JCk8wDQYJKoZIhvcNAQEBBQAEggIA
+# G3Lf6axDD9zDLKTGmqDdxZrjwDkQL9W/RZP94aEwaiuO6eFl/C6cq2opRDfRySW0
+# seknn8HY3DOGU3Ix8C56BRKBOcKDqiLdI9FgHtZRgZ3Mi/sh9qXZWfr4Re2xZQ00
+# iAOxSdrcHR41WQBRE60zBBuN56SQ+adLNdWsU0BbFuWs1bqAzS/pRyeR6m1kc8MA
+# NpdAjqssV0HCs8AmkpN2jl/ROJnlDJIw7dgiDGzMkq5gx7w121Gv8snNn6jBXsp9
+# F2jp4rGPRRGcPhaY/RvkdjYVf8wrPpjwdFbomrdm1r+FK8hTPzoAVRqIFtYYUOj+
+# NTcL9XT/mCZDihHXl3z61crBQmiKAwLsBqMhqlOSEEtykSUTwrgjI+2q8/3L9SBq
+# bVogmqZE4FbIif0uJQvg4oMXUikzvLKOv+UjmWKG5qkwxjsiX4yyFfwP063QOL7i
+# vDm8bCtkMjwm0ZYMkNFylypIoc8PFvRZDJoxcrmvE2dagw8ylhVHWgYudkh8VS8Z
+# d5/F8+2Cxj82sAxjY0pCYlLCgeNhrpzn8i+TP6ctHp+gnxEdgADHchV/BwKKvb5F
+# 0brdvNtS7BqC8oNXGDH8yjPGVyBfU34QGwZwTG1z5dHSIMMvWTmL6p1FXIi55rdS
+# 8nwMfWOKkfNnpJZTb/2f8x+0XtcogvUnha50m1CEFTWhggNLMIIDRwYJKoZIhvcN
 # AQkGMYIDODCCAzQCAQEwgZEwfTELMAkGA1UEBhMCR0IxGzAZBgNVBAgTEkdyZWF0
 # ZXIgTWFuY2hlc3RlcjEQMA4GA1UEBxMHU2FsZm9yZDEYMBYGA1UEChMPU2VjdGln
 # byBMaW1pdGVkMSUwIwYDVQQDExxTZWN0aWdvIFJTQSBUaW1lIFN0YW1waW5nIENB
 # AhA5TCXhfKBtJ6hl4jvZHSLUMA0GCWCGSAFlAwQCAgUAoHkwGAYJKoZIhvcNAQkD
-# MQsGCSqGSIb3DQEHATAcBgkqhkiG9w0BCQUxDxcNMjQwMjI1MTUxMTI4WjA/Bgkq
-# hkiG9w0BCQQxMgQwht6AnF05XUCEArBcYEdOv2AtyI3VurWKw/mjo0/VxsmT4yIN
-# Hi18u0YTnnxQ0pwOMA0GCSqGSIb3DQEBAQUABIICAGTyCf7fIZo2NOJihJT/GCyI
-# YvUYCAIvVkcnYtoI31OumvibI+wXhkAur9AWQgQ/29HYse2wLN3RgrKjdEETCQLO
-# qjz43Zf0L7mWw0pMHBO7QwWcxMJhHgDWuD5pvgVeLc1oBqrumHdn+cc7A9+iODGl
-# k9kXXG+WMtmTp7xDEXkUdHC6xD0d6GEYgf1MLkiI/Ki0dYhvwtWdK7ao9QE7hSKb
-# EymvUEgzajo5gcv+lJJdOggIS/Ioz+pcsZzvyr0jJ+sJxeQwNY1i/c0gDKvhp9Sp
-# RJP7X9q2KG8TQy0MJ5weLfeTxyJghcRyS5BqpICopyt7FF8B70fyYpKSjrSJKVTC
-# BCC6ktWK0S8nfg+WMAWYZs2PGzt4aXyC13gFgzdPfZm5EmCbPCn9OKCHlGBfNBkR
-# TgD/5v6gSXloWO88ov4NZxck9BV0u3oa1xGppLUAdqhKame4SGinwSAcB17Gfscv
-# NYJaX1TzcgxkTf89ni2sxqg6m1tp+y7slWegn59a9WHM9/1mvCKoLg4DrKEMWIIV
-# ozem4S6ixNNLwHi+W/TbmytzIM0LS95hAhYnxX5p1nXGYG3YjRBpP5NhRptOr01g
-# vYdBEAsvpfPw5VfzlO7blWuSZxm2Yb6g6jWquZrZbmjkOkW72jQe+A2HgGYP30/B
-# EzhS1b6F8xunnTugQpEq
+# MQsGCSqGSIb3DQEHATAcBgkqhkiG9w0BCQUxDxcNMjQwMjI1MTY0NzA5WjA/Bgkq
+# hkiG9w0BCQQxMgQwGnhLCq0SdGsJcRFcstCNMsHwwjJ/OXXh+qIi+NfNK4fe9X2Y
+# NdxHR20eA3+0VCaeMA0GCSqGSIb3DQEBAQUABIICAI6gSAkxD8mhGscRZQE/zmbq
+# 7b27Y/Kk5deHb8jJZg31DIvSDCZZpksQ1dlfoKS6S+Pp9rlu48N4fxmC8FQ/bLhI
+# 4OXM8BksOw2VFTDBfxvy9u0XFhhY1wcntcbEEDIQdpuyx0U5VTpR2MqRUaXujUcl
+# 3vo4B4OoQTeMIu3uSJy3Ln/tFH2+NPBmt5/phraeb6AVd7eiOogjW6eXB58ahLdI
+# TLfpJyr5do3syzhwHPcSCd5P+AHNbWkzcP57UAmDg4HzqN96X46CJ7l2oRmJZMSw
+# O0hBCBrPwspPpJ+os5+foihbUl6Zd18c/xNAlFqF4zd5L1P56+7WCJt+9gPCaETr
+# niPw02LjRhts80cwGArAMw9lyx0QYzcZF/k0cfuc1VB8R0lJZckwN9lRpAKKIhnu
+# 3JfGOTqcrFApYqipYvqffnxBLnaMns6vfQM1MkwR7EOqHmApHF5WpP7/5vAWAp3R
+# 7NMNYrzKQu1FJz7PLM2h/8ZNeZ8/iIwJYda4DIXV6fEZbiXPggyRMN04B5DokjbL
+# kJB2fu7WC295nNkkzuLdvlNPJ7gz9vxqdRoc+0ZaR6X8m0ElzYRCNPT9hypzj8Ia
+# +KWqmQPg+C6iqaMwYCe/CwXxnD7Y2RdO1+X/Or1Atb4wCp97FokyZIyEh9/4V1UY
+# 89IoQ+7XjcYyCT3+kcce
 # SIG # End signature block
