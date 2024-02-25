@@ -6,8 +6,8 @@
      Created by:    Michael Morten Sonne
      Blog:          https://blog.sonnes.cloud
      Organization:  Sonne´s Cloud
-	 Name:          SignAllFilesTo_Signed
-     Filename:      SignAllFilesTo_Signed.ps1
+	 Name:          SignAllFilesToSigned
+     Filename:      SignAllFilesToSigned.ps1
     ===========================================================================
     .SYNOPSIS
         Sign all scripts of the folder and create an _signed.ps1 copy there is signed. We import the complete chain.
@@ -33,11 +33,11 @@
 
     .EXAMPLE
         This example signs all scripts in the C:\Test directory and its subdirectories with a certificate with the specified thumbprint and hash algorithm.
-        PS C:\> .\SignAllFilesTo_Signed.ps1 -Path "C:\Test" -Hash "SHA256" -Thumbprint "d6a630b8f65c473c19f8b694491130073fccdb32" -TimestampServer "http://timestamp.sectigo.com"
+        PS C:\> .\SignAllFilesToSigned.ps1 -Path "C:\Test" -Hash "SHA256" -Thumbprint "d6a630b8f65c473c19f8b694491130073fccdb32" -TimestampServer "http://timestamp.sectigo.com"
 
     .EXAMPLE
         This shows what would happen if The script were to run. The -WhatIf parameter is used to show what would happen if The script were to run (see command above)
-        PS C:\> .\SignAllFilesTo_Signed.ps1 -Path "C:\Test" -Hash "SHA256" -Thumbprint "d6a630b8f65c473c19f8b694491130073fccdb32" -TimestampServer "http://timestamp.sectigo.com" -Whatif
+        PS C:\> .\SignAllFilesToSigned.ps1 -Path "C:\Test" -Hash "SHA256" -Thumbprint "d6a630b8f65c473c19f8b694491130073fccdb32" -TimestampServer "http://timestamp.sectigo.com" -Whatif
 
     .NOTES
         We import the complete certificate chain and use a Timestamp Server
@@ -212,6 +212,7 @@ if ($Force) {
     }
 } else {
     Write-Host "The -Force argument is required to remove '_signed.ps1' files. No files were removed." -ForegroundColor Yellow
+    Write-Host ""
 }
 
 # If path exists, certificate exists, and hash is valid, then run The script
@@ -393,8 +394,8 @@ else
 # SIG # Begin signature block
 # MIIm2wYJKoZIhvcNAQcCoIImzDCCJsgCAQExDzANBglghkgBZQMEAgEFADB5Bgor
 # BgEEAYI3AgEEoGswaTA0BgorBgEEAYI3AgEeMCYCAwEAAAQQH8w7YFlLCE63JNLG
-# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCCRvqy2fiu9bDiC
-# kM6PYJeDyCwix+NgaDGUIZlmvV3hTqCCH8gwggVvMIIEV6ADAgECAhBI/JO0YFWU
+# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCCaSsCZiHpE8Uls
+# sMb5vfmr5t3ZyHLElxEBAiNUdRuUAaCCH8gwggVvMIIEV6ADAgECAhBI/JO0YFWU
 # jTanyYqJ1pQWMA0GCSqGSIb3DQEBDAUAMHsxCzAJBgNVBAYTAkdCMRswGQYDVQQI
 # DBJHcmVhdGVyIE1hbmNoZXN0ZXIxEDAOBgNVBAcMB1NhbGZvcmQxGjAYBgNVBAoM
 # EUNvbW9kbyBDQSBMaW1pdGVkMSEwHwYDVQQDDBhBQUEgQ2VydGlmaWNhdGUgU2Vy
@@ -568,35 +569,35 @@ else
 # IExpbWl0ZWQxKzApBgNVBAMTIlNlY3RpZ28gUHVibGljIENvZGUgU2lnbmluZyBD
 # QSBSMzYCEBHhoIZkh66CYIKNKPBResYwDQYJYIZIAWUDBAIBBQCggYQwGAYKKwYB
 # BAGCNwIBDDEKMAigAoAAoQKAADAZBgkqhkiG9w0BCQMxDAYKKwYBBAGCNwIBBDAc
-# BgorBgEEAYI3AgELMQ4wDAYKKwYBBAGCNwIBFTAvBgkqhkiG9w0BCQQxIgQgplse
-# xFJ7F5gIvI2vj3pNxIiqt5RizDjsMVXWyQ7JCk8wDQYJKoZIhvcNAQEBBQAEggIA
-# G3Lf6axDD9zDLKTGmqDdxZrjwDkQL9W/RZP94aEwaiuO6eFl/C6cq2opRDfRySW0
-# seknn8HY3DOGU3Ix8C56BRKBOcKDqiLdI9FgHtZRgZ3Mi/sh9qXZWfr4Re2xZQ00
-# iAOxSdrcHR41WQBRE60zBBuN56SQ+adLNdWsU0BbFuWs1bqAzS/pRyeR6m1kc8MA
-# NpdAjqssV0HCs8AmkpN2jl/ROJnlDJIw7dgiDGzMkq5gx7w121Gv8snNn6jBXsp9
-# F2jp4rGPRRGcPhaY/RvkdjYVf8wrPpjwdFbomrdm1r+FK8hTPzoAVRqIFtYYUOj+
-# NTcL9XT/mCZDihHXl3z61crBQmiKAwLsBqMhqlOSEEtykSUTwrgjI+2q8/3L9SBq
-# bVogmqZE4FbIif0uJQvg4oMXUikzvLKOv+UjmWKG5qkwxjsiX4yyFfwP063QOL7i
-# vDm8bCtkMjwm0ZYMkNFylypIoc8PFvRZDJoxcrmvE2dagw8ylhVHWgYudkh8VS8Z
-# d5/F8+2Cxj82sAxjY0pCYlLCgeNhrpzn8i+TP6ctHp+gnxEdgADHchV/BwKKvb5F
-# 0brdvNtS7BqC8oNXGDH8yjPGVyBfU34QGwZwTG1z5dHSIMMvWTmL6p1FXIi55rdS
-# 8nwMfWOKkfNnpJZTb/2f8x+0XtcogvUnha50m1CEFTWhggNLMIIDRwYJKoZIhvcN
+# BgorBgEEAYI3AgELMQ4wDAYKKwYBBAGCNwIBFTAvBgkqhkiG9w0BCQQxIgQgCotJ
+# vmKcxt5stkEma62D4JoBLSeevunZWEf/ypwbxfEwDQYJKoZIhvcNAQEBBQAEggIA
+# kKZKFfbTxQhR46ofvB1VpidqtVSjaPlXuh62rMrIDtI9hxoGwZunynqXbDpgXRl0
+# XeeBKYaTEEcQc/DHKo1RmdM45elWXTjTyWiK//ytC0Wz5581b4jiaWzUriiqQIYA
+# XK7v4a2om7m5JgbQtsFeWECRubiZxmpdez5RD6L641ypbfT0EhhjRRHMhw+JMA6/
+# ubsG5d+1VLqPl2+SMuEueOkAZFgpRuQQj2hpWuorN2sAM/epH6mXtKh65iUWVVsx
+# q7BO4Q4F5vG9Ro2YtKRDIl1OghLrPrXM+UNXR6rMMpctDjke1KiOmv6U8hiHhC9x
+# EiGJbvXIOu1oywD1AGe1G8HDTISCKUMAuqyq8tYGPzz8wMdva2o8kVsSgteInuz0
+# QTDAhUnlQNCddWPtWpWyomlwCRw0tzZa7M+cSC04kKioA8mT4RiQlOag/21kNl5j
+# 9m2KVxkDy8hwSWftP5GZnUOEF2g1xEIhsiPfWHHjfSbZ2Yqaz6R0dWP9H74hmO/g
+# p4Ml07pYVfMkbEYFUP+cbu+wWL6Mu7UbF+ZNR+owKvYprw+myh5tm93VKXdIFOtf
+# HwO8RGmkQ6PqtMLLq9tONkcgZ0rGt/5lAJUPnyEXA3zoXc5Z7wiQJeifvKhmMfsT
+# PchOw3uBMRERZ0+gcrtpmeae2mgC6uK20y356017XQmhggNLMIIDRwYJKoZIhvcN
 # AQkGMYIDODCCAzQCAQEwgZEwfTELMAkGA1UEBhMCR0IxGzAZBgNVBAgTEkdyZWF0
 # ZXIgTWFuY2hlc3RlcjEQMA4GA1UEBxMHU2FsZm9yZDEYMBYGA1UEChMPU2VjdGln
 # byBMaW1pdGVkMSUwIwYDVQQDExxTZWN0aWdvIFJTQSBUaW1lIFN0YW1waW5nIENB
 # AhA5TCXhfKBtJ6hl4jvZHSLUMA0GCWCGSAFlAwQCAgUAoHkwGAYJKoZIhvcNAQkD
-# MQsGCSqGSIb3DQEHATAcBgkqhkiG9w0BCQUxDxcNMjQwMjI1MTY0NzA5WjA/Bgkq
-# hkiG9w0BCQQxMgQwGnhLCq0SdGsJcRFcstCNMsHwwjJ/OXXh+qIi+NfNK4fe9X2Y
-# NdxHR20eA3+0VCaeMA0GCSqGSIb3DQEBAQUABIICAI6gSAkxD8mhGscRZQE/zmbq
-# 7b27Y/Kk5deHb8jJZg31DIvSDCZZpksQ1dlfoKS6S+Pp9rlu48N4fxmC8FQ/bLhI
-# 4OXM8BksOw2VFTDBfxvy9u0XFhhY1wcntcbEEDIQdpuyx0U5VTpR2MqRUaXujUcl
-# 3vo4B4OoQTeMIu3uSJy3Ln/tFH2+NPBmt5/phraeb6AVd7eiOogjW6eXB58ahLdI
-# TLfpJyr5do3syzhwHPcSCd5P+AHNbWkzcP57UAmDg4HzqN96X46CJ7l2oRmJZMSw
-# O0hBCBrPwspPpJ+os5+foihbUl6Zd18c/xNAlFqF4zd5L1P56+7WCJt+9gPCaETr
-# niPw02LjRhts80cwGArAMw9lyx0QYzcZF/k0cfuc1VB8R0lJZckwN9lRpAKKIhnu
-# 3JfGOTqcrFApYqipYvqffnxBLnaMns6vfQM1MkwR7EOqHmApHF5WpP7/5vAWAp3R
-# 7NMNYrzKQu1FJz7PLM2h/8ZNeZ8/iIwJYda4DIXV6fEZbiXPggyRMN04B5DokjbL
-# kJB2fu7WC295nNkkzuLdvlNPJ7gz9vxqdRoc+0ZaR6X8m0ElzYRCNPT9hypzj8Ia
-# +KWqmQPg+C6iqaMwYCe/CwXxnD7Y2RdO1+X/Or1Atb4wCp97FokyZIyEh9/4V1UY
-# 89IoQ+7XjcYyCT3+kcce
+# MQsGCSqGSIb3DQEHATAcBgkqhkiG9w0BCQUxDxcNMjQwMjI1MTY1NTI3WjA/Bgkq
+# hkiG9w0BCQQxMgQwG92iZHPSHvJcAB2FrHHdUc30r5+Ydr7xvHdCQOc0OtXdtSSJ
+# hPHK4W/aIgea/QOkMA0GCSqGSIb3DQEBAQUABIICACFcyuNgzDUwnSuJx7viT/Ku
+# 7j5rBDW3lgOt9UfvSkSovq/DFksEuufCeZKlR16pVeqcwgXGMgNFVWVisDoh9cAF
+# eWZtuAcUmKUuRkqmGt0nKFuV4vC1Q65BwKrLQ078uU4UrL6BaqDwcpB/eKgDi7Nx
+# QL4gdYeB8DzsblnDhC/sjhRHPycCA0a7KTCwmTETcMcr4wCKFXZYKF+47jNISwse
+# sYhrUxalhUi7PnzpvszX+H7aKqGRHhcfh99DC9AVMga4XPKMRUeBmi/BY/Ywfkvj
+# I9+WCdd5vTZbDJ/yTAMzzn51IPZg/tVLBVhvM2qTqDUYiwcth84Bpk6jrgWiTEEs
+# 3DZvBPjvx0O6LZcyfeoxPvh5PoPR29hoT9VvIv1kUeDKPGdDked1Edv83nBjuFmZ
+# mhl3+jVPxdk9mV5aa0+EIVw+++SaGt0SofBlsdBvA6+PALg5Z0AcUY++Nga6L2S+
+# ymQXVfGl7XuAD5AyDZj5C1p0HpMyxrrjPwN/9EgZQrTkIfn5joNX77rNbggr3/Rk
+# 5AD/sjZ9CzFzFA8YsxTMyJkt1lZT1AldDJ3/4VB54bHOnepHaD90Zvb9bqfZfU8o
+# HvqinlhQXwTmgUeL3glvNVQzb+mDFEwD2XKDcr4oQbcllKhudOT9kWQRN94UUk5f
+# W8aeX9YPBy+fIezSvT2g
 # SIG # End signature block

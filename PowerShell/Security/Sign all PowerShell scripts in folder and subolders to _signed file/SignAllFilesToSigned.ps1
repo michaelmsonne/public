@@ -6,8 +6,8 @@
      Created by:    Michael Morten Sonne
      Blog:          https://blog.sonnes.cloud
      Organization:  Sonne´s Cloud
-	 Name:          SignAllFilesTo_Signed
-     Filename:      SignAllFilesTo_Signed.ps1
+	 Name:          SignAllFilesToSigned
+     Filename:      SignAllFilesToSigned.ps1
     ===========================================================================
     .SYNOPSIS
         Sign all scripts of the folder and create an _signed.ps1 copy there is signed. We import the complete chain.
@@ -33,11 +33,11 @@
 
     .EXAMPLE
         This example signs all scripts in the C:\Test directory and its subdirectories with a certificate with the specified thumbprint and hash algorithm.
-        PS C:\> .\SignAllFilesTo_Signed.ps1 -Path "C:\Test" -Hash "SHA256" -Thumbprint "d6a630b8f65c473c19f8b694491130073fccdb32" -TimestampServer "http://timestamp.sectigo.com"
+        PS C:\> .\SignAllFilesToSigned.ps1 -Path "C:\Test" -Hash "SHA256" -Thumbprint "d6a630b8f65c473c19f8b694491130073fccdb32" -TimestampServer "http://timestamp.sectigo.com"
 
     .EXAMPLE
         This shows what would happen if The script were to run. The -WhatIf parameter is used to show what would happen if The script were to run (see command above)
-        PS C:\> .\SignAllFilesTo_Signed.ps1 -Path "C:\Test" -Hash "SHA256" -Thumbprint "d6a630b8f65c473c19f8b694491130073fccdb32" -TimestampServer "http://timestamp.sectigo.com" -Whatif
+        PS C:\> .\SignAllFilesToSigned.ps1 -Path "C:\Test" -Hash "SHA256" -Thumbprint "d6a630b8f65c473c19f8b694491130073fccdb32" -TimestampServer "http://timestamp.sectigo.com" -Whatif
 
     .NOTES
         We import the complete certificate chain and use a Timestamp Server
@@ -212,6 +212,7 @@ if ($Force) {
     }
 } else {
     Write-Host "The -Force argument is required to remove '_signed.ps1' files. No files were removed." -ForegroundColor Yellow
+    Write-Host ""
 }
 
 # If path exists, certificate exists, and hash is valid, then run The script
