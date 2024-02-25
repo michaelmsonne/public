@@ -31,6 +31,9 @@
     .PARAMETER WhatIf
         Show what would happen if The script were to run. The default value is $false.
 
+    .PARAMETER Force
+        Remove all _signed.ps1 files in the specified directory and its subdirectories. The default value is $false.
+
     .EXAMPLE
         This example signs all scripts in the C:\Test directory and its subdirectories with a certificate with the specified thumbprint and hash algorithm.
         PS C:\> .\SignAllFilesToSigned.ps1 -Path "C:\Test" -Hash "SHA256" -Thumbprint "d6a630b8f65c473c19f8b694491130073fccdb32" -TimestampServer "http://timestamp.sectigo.com"
@@ -47,7 +50,7 @@ Param (
     [Parameter(Mandatory=$true)]
     [string]$Path,
     [Parameter(Mandatory=$true)]
-    [string]$Hash,
+    [string]$Hash = "SHA256", # Default value set to SHA256
     [Parameter(Mandatory=$true)]
     [string]$Thumbprint,
     [string]$TimestampServer = "http://timestamp.sectigo.com",
@@ -394,8 +397,8 @@ else
 # SIG # Begin signature block
 # MIIm2wYJKoZIhvcNAQcCoIImzDCCJsgCAQExDzANBglghkgBZQMEAgEFADB5Bgor
 # BgEEAYI3AgEEoGswaTA0BgorBgEEAYI3AgEeMCYCAwEAAAQQH8w7YFlLCE63JNLG
-# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCCaSsCZiHpE8Uls
-# sMb5vfmr5t3ZyHLElxEBAiNUdRuUAaCCH8gwggVvMIIEV6ADAgECAhBI/JO0YFWU
+# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCA/30MBoYb2YYTF
+# cqE6HoJqfSKIvPX+wNvnAoa/3Fo5PKCCH8gwggVvMIIEV6ADAgECAhBI/JO0YFWU
 # jTanyYqJ1pQWMA0GCSqGSIb3DQEBDAUAMHsxCzAJBgNVBAYTAkdCMRswGQYDVQQI
 # DBJHcmVhdGVyIE1hbmNoZXN0ZXIxEDAOBgNVBAcMB1NhbGZvcmQxGjAYBgNVBAoM
 # EUNvbW9kbyBDQSBMaW1pdGVkMSEwHwYDVQQDDBhBQUEgQ2VydGlmaWNhdGUgU2Vy
@@ -569,35 +572,35 @@ else
 # IExpbWl0ZWQxKzApBgNVBAMTIlNlY3RpZ28gUHVibGljIENvZGUgU2lnbmluZyBD
 # QSBSMzYCEBHhoIZkh66CYIKNKPBResYwDQYJYIZIAWUDBAIBBQCggYQwGAYKKwYB
 # BAGCNwIBDDEKMAigAoAAoQKAADAZBgkqhkiG9w0BCQMxDAYKKwYBBAGCNwIBBDAc
-# BgorBgEEAYI3AgELMQ4wDAYKKwYBBAGCNwIBFTAvBgkqhkiG9w0BCQQxIgQgCotJ
-# vmKcxt5stkEma62D4JoBLSeevunZWEf/ypwbxfEwDQYJKoZIhvcNAQEBBQAEggIA
-# kKZKFfbTxQhR46ofvB1VpidqtVSjaPlXuh62rMrIDtI9hxoGwZunynqXbDpgXRl0
-# XeeBKYaTEEcQc/DHKo1RmdM45elWXTjTyWiK//ytC0Wz5581b4jiaWzUriiqQIYA
-# XK7v4a2om7m5JgbQtsFeWECRubiZxmpdez5RD6L641ypbfT0EhhjRRHMhw+JMA6/
-# ubsG5d+1VLqPl2+SMuEueOkAZFgpRuQQj2hpWuorN2sAM/epH6mXtKh65iUWVVsx
-# q7BO4Q4F5vG9Ro2YtKRDIl1OghLrPrXM+UNXR6rMMpctDjke1KiOmv6U8hiHhC9x
-# EiGJbvXIOu1oywD1AGe1G8HDTISCKUMAuqyq8tYGPzz8wMdva2o8kVsSgteInuz0
-# QTDAhUnlQNCddWPtWpWyomlwCRw0tzZa7M+cSC04kKioA8mT4RiQlOag/21kNl5j
-# 9m2KVxkDy8hwSWftP5GZnUOEF2g1xEIhsiPfWHHjfSbZ2Yqaz6R0dWP9H74hmO/g
-# p4Ml07pYVfMkbEYFUP+cbu+wWL6Mu7UbF+ZNR+owKvYprw+myh5tm93VKXdIFOtf
-# HwO8RGmkQ6PqtMLLq9tONkcgZ0rGt/5lAJUPnyEXA3zoXc5Z7wiQJeifvKhmMfsT
-# PchOw3uBMRERZ0+gcrtpmeae2mgC6uK20y356017XQmhggNLMIIDRwYJKoZIhvcN
+# BgorBgEEAYI3AgELMQ4wDAYKKwYBBAGCNwIBFTAvBgkqhkiG9w0BCQQxIgQgKuA2
+# G68+9aMtPl8jo/imHl92+De2nvlVlSD3DpvlTI4wDQYJKoZIhvcNAQEBBQAEggIA
+# E+EWkL5zEHs+fYx9T0cAYxqND4+sqJ1hyMeo9A3yxmjYFZJqqm6WdMvQnnqKbeYG
+# zi6AtdRLfr0n2BETJj7DBhpghwV9mDVMzA9q+cgrA6k+lQnoTKP5ugk4C110sk6r
+# 2gAzh23PIT+RFtHQn2Bk6mr3wuTrjw/06H7WOtlRJ5fTpYfb1Gc1ceccYTf4epeX
+# BEG5hsaJadTcBwOpJq+RXmCL2MGY5TGwKXnD/jW/bIkVguW3D5vodtSc45JG679O
+# 6N9uXKq5siVpocCwsFxgj0SksVxeYoro/BgakFKqK7QHSw6L9Ae35Iig5Yw1X9W0
+# 0UkNxBhqj7z0fN/4oniAmOhJj//6xdAkxfVl7rxbi8XOiEk7KXPXMUcSGoDPXshq
+# zNpbhJs2rwYy9eTDRSrANlpOSgbWt5iCKp7rrKrnzy0XA6K8aWRIBEesHiIWAXJG
+# ZqxLZYAXAuBjrswWRoLJKtIYeF72HW+qRuufqThA3E9E/6x6g9FuMjmWhUE34r6u
+# id4QBMi6ithX0YH99CwqY3ODAEKUNoBfbDRrbrLWDje+h3Ce/6eLRMkCGdgnYTtE
+# ar/+mC7aXQpoXY579B+D7Kj0J6yvWHXzC2r6GR58SfxWdMAd/EEpONTJO9aeyYiJ
+# iBWSmjFSMf3pok2oho4vAGNTYH7wXmALXzuis67mqfqhggNLMIIDRwYJKoZIhvcN
 # AQkGMYIDODCCAzQCAQEwgZEwfTELMAkGA1UEBhMCR0IxGzAZBgNVBAgTEkdyZWF0
 # ZXIgTWFuY2hlc3RlcjEQMA4GA1UEBxMHU2FsZm9yZDEYMBYGA1UEChMPU2VjdGln
 # byBMaW1pdGVkMSUwIwYDVQQDExxTZWN0aWdvIFJTQSBUaW1lIFN0YW1waW5nIENB
 # AhA5TCXhfKBtJ6hl4jvZHSLUMA0GCWCGSAFlAwQCAgUAoHkwGAYJKoZIhvcNAQkD
-# MQsGCSqGSIb3DQEHATAcBgkqhkiG9w0BCQUxDxcNMjQwMjI1MTY1NTI3WjA/Bgkq
-# hkiG9w0BCQQxMgQwG92iZHPSHvJcAB2FrHHdUc30r5+Ydr7xvHdCQOc0OtXdtSSJ
-# hPHK4W/aIgea/QOkMA0GCSqGSIb3DQEBAQUABIICACFcyuNgzDUwnSuJx7viT/Ku
-# 7j5rBDW3lgOt9UfvSkSovq/DFksEuufCeZKlR16pVeqcwgXGMgNFVWVisDoh9cAF
-# eWZtuAcUmKUuRkqmGt0nKFuV4vC1Q65BwKrLQ078uU4UrL6BaqDwcpB/eKgDi7Nx
-# QL4gdYeB8DzsblnDhC/sjhRHPycCA0a7KTCwmTETcMcr4wCKFXZYKF+47jNISwse
-# sYhrUxalhUi7PnzpvszX+H7aKqGRHhcfh99DC9AVMga4XPKMRUeBmi/BY/Ywfkvj
-# I9+WCdd5vTZbDJ/yTAMzzn51IPZg/tVLBVhvM2qTqDUYiwcth84Bpk6jrgWiTEEs
-# 3DZvBPjvx0O6LZcyfeoxPvh5PoPR29hoT9VvIv1kUeDKPGdDked1Edv83nBjuFmZ
-# mhl3+jVPxdk9mV5aa0+EIVw+++SaGt0SofBlsdBvA6+PALg5Z0AcUY++Nga6L2S+
-# ymQXVfGl7XuAD5AyDZj5C1p0HpMyxrrjPwN/9EgZQrTkIfn5joNX77rNbggr3/Rk
-# 5AD/sjZ9CzFzFA8YsxTMyJkt1lZT1AldDJ3/4VB54bHOnepHaD90Zvb9bqfZfU8o
-# HvqinlhQXwTmgUeL3glvNVQzb+mDFEwD2XKDcr4oQbcllKhudOT9kWQRN94UUk5f
-# W8aeX9YPBy+fIezSvT2g
+# MQsGCSqGSIb3DQEHATAcBgkqhkiG9w0BCQUxDxcNMjQwMjI1MTcwMDEwWjA/Bgkq
+# hkiG9w0BCQQxMgQwSIua9aARPb2/OBmycCqpYyOnw+kFO3UH7dlNQ7QfSx3vl9qW
+# i0k2cLcadwh/ebIyMA0GCSqGSIb3DQEBAQUABIICADQADThYzjVKABZq5ka8keFD
+# 5w8ZtLvos2ktL97/IbcH+1CX9TCBL0DGY0hC/9E07Rfi8oW8WeveoCCA80olXX9U
+# Q1nkILZ+qjqlWghKGmHCTYyMPzJ2ISw3oiOw3egWe5obeTLb4QNZJYl6Cupq/Xmh
+# xmXTE+EWYpZsWBv2sTHRuZZA5OtvTcq7PvXGoZTbX/g1HMF9x3FCr+lRCflV0Qz4
+# MrMoa0ZovlFzXuT40xYbeedk/ro/Arr45pMs6zadHHjdSg18gEM2vjZ4GfVTFTJM
+# yGAJ8pW2rXCBZyMgd5oBQJ+x5lDoDiQFNvyzhwx8TyW7oCbiBir+Ok5bGJCdzRZe
+# 6+LaTlXRynXW9oYXkZlgOBpQb/u9h7DGD0JLvJvD5CtISjNTybj9+JzLOF3Eq8Gi
+# Gelh6ngp/CenK8VyQIfgkbvCbRmyFsyimxY979BEtSKzSkSxReFCoq07LP+sQDfa
+# QfiDm7l9HDOhcHNikayi1HER7WegTedHWgqHYhoyyufx+Pr0JcShIG8AU5WKdO34
+# 3xturg8hChmbw+oTwigesSfkYCwsFt06y3r54f2vcMYLEUny8EdavNCiOSNNea0d
+# LTKBuRM+nAq+C7PbE+fEWxUXed6mQoqphPhbXYtE19jI/AzjiTYXFvCintVOM0Bj
+# FCmAJIjbpgKj/dBq5l/Y
 # SIG # End signature block

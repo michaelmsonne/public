@@ -31,6 +31,9 @@
     .PARAMETER WhatIf
         Show what would happen if The script were to run. The default value is $false.
 
+    .PARAMETER Force
+        Remove all _signed.ps1 files in the specified directory and its subdirectories. The default value is $false.
+
     .EXAMPLE
         This example signs all scripts in the C:\Test directory and its subdirectories with a certificate with the specified thumbprint and hash algorithm.
         PS C:\> .\SignAllFilesToSigned.ps1 -Path "C:\Test" -Hash "SHA256" -Thumbprint "d6a630b8f65c473c19f8b694491130073fccdb32" -TimestampServer "http://timestamp.sectigo.com"
@@ -47,7 +50,7 @@ Param (
     [Parameter(Mandatory=$true)]
     [string]$Path,
     [Parameter(Mandatory=$true)]
-    [string]$Hash,
+    [string]$Hash = "SHA256", # Default value set to SHA256
     [Parameter(Mandatory=$true)]
     [string]$Thumbprint,
     [string]$TimestampServer = "http://timestamp.sectigo.com",
