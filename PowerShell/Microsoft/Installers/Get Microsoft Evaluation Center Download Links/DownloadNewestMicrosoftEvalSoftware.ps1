@@ -2,8 +2,10 @@
 	.NOTES
 	===========================================================================
 	 Created on:    14-01-2023 10:25
+     Updated on:    04-03-2024 10:25
 	 Created by:    Michael Morten Sonne
 	 Organization: 	
+     Blog:          https://blog.sonnes.cloud
 	 Filename:     	DownloadNewestMicrosoftEvalSoftware.ps1
 	===========================================================================
 	.DESCRIPTION
@@ -23,7 +25,7 @@ param (
 )
 
 #Reset totalcount to null
-$totalcount = $null
+$totalDownloadCount = $null
  
 #List of Evalution Center links with downloadable content
 $urls = @(
@@ -38,7 +40,6 @@ $urls = @(
     'https://www.microsoft.com/en-us/evalcenter/download-sharepoint-server-2013',
     'https://www.microsoft.com/en-us/evalcenter/download-sharepoint-server-2016',
     'https://www.microsoft.com/en-us/evalcenter/download-sharepoint-server-2019',
-    'https://www.microsoft.com/en-us/evalcenter/download-skype-business-server-2019',
     'https://www.microsoft.com/en-us/evalcenter/download-sql-server-2016',
     'https://www.microsoft.com/en-us/evalcenter/download-sql-server-2017-rtm',
     'https://www.microsoft.com/en-us/evalcenter/download-sql-server-2019',
@@ -63,21 +64,21 @@ $ProgressPreference = "SilentlyContinue"
 $totalfound = foreach ($url in $urls) {
     try {
         $content = Invoke-WebRequest -Uri $url -ErrorAction Stop
-        $downloadlinks = $content.links | Where-Object { `
+        $downloadLinks = $content.links | Where-Object { `
                 $_.'aria-label' -match 'Download' `
                 -and $_.outerHTML -match 'fwlink' `
                 -or $_.'aria-label' -match '64-bit edition' }    
-        $count = $downloadlinks.href.Count
-        $totalcount += $count
+        $count = $downloadLinks.href.Count
+        $totalDownloadCount += $count
         Write-host ("Processing {0}, Found {1} Download(s)..." -f $url, $count) -ForegroundColor Green
         if ($count -gt 0) {
-            foreach ($downloadlink in $downloadlinks) { # Fix variable name here
+            foreach ($downloadLink in $downloadLinks) { # Fix variable name here
                 $downloadDetails = [PSCustomObject]@{
                     Title  = $url.split('/')[5].replace('-', ' ').replace('download ', '')
-                    Name   = $downloadlink.'aria-label'.Replace('Download ', '')
-                    Tag    = $downloadlink.'data-bi-tags'.Split('&')[3].split(';')[1]
-                    Format = $downloadlink.'data-bi-tags'.Split('-')[1].ToUpper()
-                    Link   = $downloadlink.href
+                    Name   = $downloadLink.'aria-label'.Replace('Download ', '')
+                    Tag    = $downloadLink.'data-bi-tags'.Split('&')[3].split(';')[1]
+                    Format = $downloadLink.'data-bi-tags'.Split('-')[1].ToUpper()
+                    Link   = $downloadLink.href
                 }
                 # Output the download details to the console
                 Write-Host ("  Title: {0}, Name: {1}, Tag: {2}, Format: {3}, Link: {4}" -f `
@@ -95,13 +96,13 @@ $totalfound = foreach ($url in $urls) {
     }
 }
 
-if ($null -eq $totalcount) {
+if ($null -eq $totalDownloadCount) {
     Write-Host "No download links found." -ForegroundColor Red
     exit
 }
 else {
     # Output total downloads found and export result to the $outputfile path specified
-    Write-Host ("Found a total of {0} Downloads there is collected links to you can download." -f $totalcount) -ForegroundColor Green
+    Write-Host ("Found a total of {0} Downloads there is collected links to you can download." -f $totalDownloadCount) -ForegroundColor Green
 
     # Export the totalfound array to a CSV file
     $totalfound | Sort-Object Title, Name, Tag, Format | Export-Csv -NoTypeInformation -Encoding UTF8 -Delimiter ';' -Path $outputfile
