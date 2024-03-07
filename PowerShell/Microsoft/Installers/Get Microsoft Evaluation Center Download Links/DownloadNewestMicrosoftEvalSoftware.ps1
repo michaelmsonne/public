@@ -2,7 +2,6 @@
 	.NOTES
 	===========================================================================
 	 Created on:    14-01-2023 10:25
-     Updated on:    04-03-2024 10:25
 	 Created by:    Michael Morten Sonne
 	 Organization: 	
      Blog:          https://blog.sonnes.cloud
@@ -13,6 +12,9 @@
         It scans a predefined list of URLs, extracts relevant information such as software title, name, tag, format, and download link, and exports the details to a CSV file.
         The exported CSV file serves as a convenient reference for users to access the latest Microsoft evaluation software downloads from the Evaluation Center for testing and evaluation purposes faster.
 
+    .CHANGELOG
+        14-01-2023 - first version of the script.
+        
     .PARAMETER outputfile
         The path to the CSV file where the download links will be exported. If not specified, the default path is C:\Temp\EvalCenterDownloads.csv.
          
