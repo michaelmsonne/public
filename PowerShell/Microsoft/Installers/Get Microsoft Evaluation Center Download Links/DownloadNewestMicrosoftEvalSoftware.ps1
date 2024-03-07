@@ -1,12 +1,14 @@
-<#	
+<#
 	.NOTES
 	===========================================================================
-    Created on:    14-01-2023 10:25
-    Created by:    Michael Morten Sonne
-    Organization: 	
-    Blog:          https://blog.sonnes.cloud
-    Filename:     	DownloadNewestMicrosoftEvalSoftware.ps1
+	 Created with: 	SAPIEN Technologies, Inc., PowerShell Studio 2022 v5.8.213
+	 Created on:   	14-01-2023 10:25
+	 Created by:   	Michael Morten Sonne
+	 Organization: 	Sonne´s Cloud
+	 Blog:          https://blog.sonnes.cloud
+	 Filename:     	'DownloadNewestMicrosoftEvalSoftware.ps1'
 	===========================================================================
+
 	.DESCRIPTION
         This PowerShell script retrieves download links for the latest Microsoft Evaluation Center software releases.
         It scans a predefined list of URLs, extracts relevant information such as software title, name, tag, format, and download link, and exports the details to a CSV file.
