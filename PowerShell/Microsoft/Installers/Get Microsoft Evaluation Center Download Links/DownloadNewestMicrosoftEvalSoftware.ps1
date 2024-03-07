@@ -26,10 +26,10 @@ param (
     [string]$outputfile = 'C:\Temp\EvalCenterDownloads.csv'
 )
 
-#Reset totalcount to null
+# Reset totalcount to null
 $totalDownloadCount = $null
  
-#List of Evalution Center links with downloadable content
+# List of Evalution Center links with downloadable content
 $urls = @(
     'https://www.microsoft.com/en-us/evalcenter/download-host-integration-server-2020',
     'https://www.microsoft.com/en-us/evalcenter/download-hyper-v-server-2016',
@@ -63,6 +63,8 @@ $urls = @(
 
 # Loop through the URLs, search for download links, and add to totalfound array
 $ProgressPreference = "SilentlyContinue"
+
+# Loop through the URLs and search for download links and add to totalfound array
 $totalfound = foreach ($url in $urls) {
     try {
         # Get the content of the URL
