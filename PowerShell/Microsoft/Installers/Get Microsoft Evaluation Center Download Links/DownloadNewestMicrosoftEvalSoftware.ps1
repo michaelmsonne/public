@@ -65,16 +65,24 @@ $urls = @(
 $ProgressPreference = "SilentlyContinue"
 $totalfound = foreach ($url in $urls) {
     try {
+        # Get the content of the URL
         $content = Invoke-WebRequest -Uri $url -ErrorAction Stop
+
+        # Search for download links and add to totalfound array
         $downloadLinks = $content.links | Where-Object { `
                 $_.'aria-label' -match 'Download' `
                 -and $_.outerHTML -match 'fwlink' `
-                -or $_.'aria-label' -match '64-bit edition' }    
+                -or $_.'aria-label' -match '64-bit edition' }
+        # Count the number of download links found and add to totalDownloadCount  
         $count = $downloadLinks.href.Count
         $totalDownloadCount += $count
+
+        # Output the URL and the number of download links found to the console
         Write-host ("Processing {0}, Found {1} Download(s)..." -f $url, $count) -ForegroundColor Green
         if ($count -gt 0) {
-            foreach ($downloadLink in $downloadLinks) { # Fix variable name here
+            # Output the download links found to the console if any
+            foreach ($downloadLink in $downloadLinks) {
+                # Create a custom object to store the download details
                 $downloadDetails = [PSCustomObject]@{
                     Title  = $url.split('/')[5].replace('-', ' ').replace('download ', '')
                     Name   = $downloadLink.'aria-label'.Replace('Download ', '')
@@ -99,6 +107,7 @@ $totalfound = foreach ($url in $urls) {
 }
 
 if ($null -eq $totalDownloadCount) {
+    # Output a message if no download links are found
     Write-Host "No download links found." -ForegroundColor Red
     exit
 }
