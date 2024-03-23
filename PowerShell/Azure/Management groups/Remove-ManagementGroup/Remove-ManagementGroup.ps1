@@ -38,7 +38,7 @@ function Invoke-Script
     .SYNOPSIS
         Starts the script and checks for required modules and login to Azure
 
-    .EXAMPLE 
+    .EXAMPLE
         Invoke-Script -Checks
     #>
 
