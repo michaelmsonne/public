@@ -175,68 +175,98 @@ function CheckConnectionToAzure {
     }
 }
 
-# Start the script and check for required modules
-Invoke-Script -Checks
+function Confirm-Action {
+    param (
+        [string]$Message
+    )
 
-# Get the tenant ID
-$tenantId = (Get-AzContext).Tenant.Id
-
-# Initialize flag variable to track if any work is done
-$workDone = $false
-
-# Get all management groups with names matching the specified prefix
-Get-AzManagementGroup | Where-Object Name -match "^$Prefix" | Sort-Object -Descending | ForEach-Object {
-    # Get the management group name and display name
-    $managementGroupName = $PSItem.Name
-    $managementGroupDisplayName = $PSItem.DisplayName
-
-    # Inform about checking subscriptions under the current management group
-    Write-Output "Checking subscription(s) under management group '$managementGroupDisplayName'..."
-
-    try {
-        # Iterate through subscriptions under the current management group
-        Get-AzManagementGroupSubscription -GroupName $managementGroupName | ForEach-Object {
-            # Get the subscription ID
-            $subscriptionId = $PSItem.Id -split "/" | Select-Object -Last 1
-
-            # Inform about moving subscription to the root
-            Write-Output "Moving subscription '$managementGroupDisplayName' to /..."
-
-            try {
-                # Move the subscription to the root
-                New-AzManagementGroupSubscription -GroupName $tenantId -SubscriptionId $subscriptionId -ErrorAction Stop | Out-Null
-                Write-Output "Subscription '$subscriptionId' moved successfully."
-            } catch {
-                Write-Output "Failed to move subscription '$subscriptionId': $_"
-            }
-        }
-
-        # Inform about removing management group
-        Write-Output "Removing management group '$managementGroupDisplayName'..."
-
-        try {
-            # Remove the management group
-            Remove-AzManagementGroup -GroupName $managementGroupName -ErrorAction Stop | Out-Null
-            Write-Output "Management group '$managementGroupDisplayName' removed successfully."
-
-            $workDone = $true # Set flag to true if any work has been done
-        } catch {
-            Write-Output "Failed to remove management group '$managementGroupDisplayName': $_"
-        }
-    } catch {
-        Write-Output "Error occurred while processing management group '$managementGroupDisplayName': $_"
+    $choice = Read-Host -Prompt "$Message (Y/N)"
+    if ($choice -eq 'Y' -or $choice -eq 'y') {
+        return $true
+    } elseif ($choice -eq 'N' -or $choice -eq 'n') {
+        write-host "Exiting script..." -ForegroundColor Yellow
+        exit
+    } else {
+        write-host "Invalid input. Please enter Y or N." -ForegroundColor Yellow
+        Confirm-Action -Message $Message
     }
 }
 
-# Inform about the completion of the script or no management groups found with the specified prefix
-if ($workDone) {
-    # Inform about the completion of the script
-    Write-Output "All management groups with prefix '$Prefix' have been removed and their subscriptions have been moved."
-}
-else {
-    # Inform about no management groups found with the specified prefix
-    Write-Output "No management groups with prefix '$Prefix' found."
-}
+write-host '#####################################################################################################' -ForegroundColor Red
+write-host '#                                                                                                   #' -ForegroundColor Red
+write-host '#   This script will delete Azure Management Groups in the prefix you set and will then move all    #' -ForegroundColor Red
+write-host '#   the Azure subscriptions that are assigned the the underlaying Management Groups to the root     #' -ForegroundColor Red
+write-host '#   Azure RBAC roles and Azure Policyes will be deleted to if assigned to Management Groups         #' -ForegroundColor Red
+write-host '#                                                                                                   #' -ForegroundColor Red
+write-host '#####################################################################################################' -ForegroundColor Red
+write-host ''
 
-# Check if connected to Azure and prompt for logout if connected to Azure before exiting the script
-CheckConnectionToAzure
+if (Confirm-Action -Message "Do you want to continue with the script?") {
+    # Start the script and check for required modules
+    Invoke-Script -Checks
+
+    # Get the tenant ID
+    $tenantId = (Get-AzContext).Tenant.Id
+
+    # Initialize flag variable to track if any work is done
+    $workDone = $false
+
+    # Get all management groups with names matching the specified prefix
+    Get-AzManagementGroup | Where-Object Name -match "^$Prefix" | Sort-Object -Descending | ForEach-Object {
+        # Get the management group name and display name
+        $managementGroupName = $PSItem.Name
+        $managementGroupDisplayName = $PSItem.DisplayName
+
+        # Inform about checking subscriptions under the current management group
+        Write-Output "Checking subscription(s) under management group '$managementGroupDisplayName'..."
+
+        try {
+            # Iterate through subscriptions under the current management group
+            Get-AzManagementGroupSubscription -GroupName $managementGroupName | ForEach-Object {
+                # Get the subscription ID
+                $subscriptionId = $PSItem.Id -split "/" | Select-Object -Last 1
+
+                # Inform about moving subscription to the root
+                Write-Output "Moving subscription '$managementGroupDisplayName' to /..."
+
+                try {
+                    # Move the subscription to the root
+                    New-AzManagementGroupSubscription -GroupName $tenantId -SubscriptionId $subscriptionId -ErrorAction Stop | Out-Null
+                    Write-Output "Subscription '$subscriptionId' moved successfully."
+                } catch {
+                    Write-Output "Failed to move subscription '$subscriptionId': $_"
+                }
+            }
+
+            # Inform about removing management group
+            Write-Output "Removing management group '$managementGroupDisplayName'..."
+
+            try {
+                # Remove the management group
+                Remove-AzManagementGroup -GroupName $managementGroupName -ErrorAction Stop | Out-Null
+                Write-Output "Management group '$managementGroupDisplayName' removed successfully."
+
+                $workDone = $true # Set flag to true if any work has been done
+            } catch {
+                Write-Output "Failed to remove management group '$managementGroupDisplayName': $_"
+            }
+        } catch {
+            Write-Output "Error occurred while processing management group '$managementGroupDisplayName': $_"
+        }
+    }
+
+    # Inform about the completion of the script or no management groups found with the specified prefix
+    if ($workDone) {
+        # Inform about the completion of the script
+        Write-Output "All management groups with prefix '$Prefix' have been removed and their subscriptions have been moved."
+    }
+    else {
+        # Inform about no management groups found with the specified prefix
+        Write-Output "No management groups with prefix '$Prefix' found."
+    }
+
+    # Check if connected to Azure and prompt for logout if connected to Azure before exiting the script
+    CheckConnectionToAzure
+} else {
+    exit
+}
