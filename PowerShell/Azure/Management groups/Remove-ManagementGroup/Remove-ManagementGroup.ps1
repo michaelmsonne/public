@@ -19,6 +19,7 @@
 
     .CHANGELOG
         23-03-2024 - Michael Morten Sonne - Initial release
+        24-03-2024 - Michael Morten Sonne - Added function to show banner and confirm run the script
     
 	.EXAMPLE
         Delete all management groups with a specific prefix and move their subscriptions to the root
