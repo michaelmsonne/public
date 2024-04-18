@@ -163,7 +163,7 @@ function Invoke-Script
     if(!$Checks -and !$CheckLogin -and !$Banner)
     {
         Write-Host "Please login with Connect-AzAccount" -ForegroundColor Red
-	}            
+	}
 }
 
 function CheckConnectionToAzure {
