@@ -1,3 +1,36 @@
+<#	
+	.NOTES
+	===========================================================================
+	 Created with: 	SAPIEN Technologies, Inc., PowerShell Studio 2022 v5.8.213
+	 Created on:   	15-07-2024 11:41
+	 Created by:   	Michael Morten Sonne
+	 Organization: 	Sonne´s Cloud
+	 Blog:          https://blog.sonnes.cloud
+	 GitHub:        https://github.com/michaelmsonne
+	 Filename:     	Get-AzureArcMachinePrincipalID.ps1
+	===========================================================================
+	.DESCRIPTION
+        This script retrieves the principal ID of an Azure Arc machine in a specified resource group.
+        The script prompts for the Azure subscription, resource group, and Azure Arc machine name or pattern.
+        It then retrieves all Azure Arc machines in the specified resource group and filters them based on the provided pattern.
+        If any machines are found, the script displays the machine name and principal ID.
+        The principal ID is required to connect to the Azure Arc machine using the Azure Arc agent.
+        
+        The script also provides a message indicating that a DNS record needs to be created to resolve the principal ID to the machine's IP address.
+        This DNS record is required to connect to the Azure Arc machine using the Azure Arc agent.
+
+    .REQUREMENT
+        - Azure subscription
+        - Microsoft Azure PowerShell Az module (at least 'Az.Accounts' and 'Az.Resources')
+        - Right permissions on management groups and subscription to get data
+
+    .CHANGELOG
+        15-07-2024 - Michael Morten Sonne - Initial release
+    
+	.EXAMPLE
+        PS C:\> .\Get-AzureArcMachinePrincipalID.ps1
+#>
+
 # Check if already connected to Azure
 try {
     # Check if already connected to Azure
