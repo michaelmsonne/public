@@ -6,6 +6,7 @@
 	 Created by:   	Michael Morten Sonne
 	 Organization: 	Sonne´s Cloud
 	 Blog:          https://blog.sonnes.cloud
+	 GitHub:        https://github.com/michaelmsonne
 	 Filename:     	'Create Azure RBAC Role based on CIEM access report - used access scopes.ps1'
 	===========================================================================
 	.DESCRIPTION
@@ -25,6 +26,7 @@
     .CHANGELOG
         05-01-2024 - Michael Morten Sonne - Initial release
         06-02-2024 - Michael Morten Sonne - Some small changes to the script and add GridView for large datasets if needed (some work done too before here but not documented)
+        07-03-2024 - Michael Morten Sonne - Some small changes and typos fixed and added try/catch to the script for install of Az modules
 
 	.EXAMPLE
         Create a custom Azure RBAC role based on CIEM access report in CSV format and display the unique access scopes and count in the console
@@ -49,7 +51,7 @@ function Invoke-Script
 {
     <# 
     .SYNOPSIS
-        Displays info about this script and its functions.
+        Starts the script and checks for required modules and login to Azure
 
     .EXAMPLE 
         Invoke-Script -Banner
@@ -61,30 +63,39 @@ function Invoke-Script
     [Parameter(Mandatory=$false)][switch]$CheckLogin = $null,
     [Parameter(Mandatory=$false)][switch]$Banner = $null)
 
+    # Check if the user is logged in to Azure
     If ($CheckLogin)
     {
         #Login Check
         $AZSUser = Get-AzContext
         if(!$AZSUser)
         {
+            # Prompt the user to login to Azure
             Write-Host "Please login with Connect-AzAccount - see popup promt" -ForegroundColor Yellow
             
             # Try to connect to Azure via Az module
             try{
+                # Connect to Azure via Az module
                 Connect-AzAccount
             }catch{
+                # Failed to connect to Azure
                 Write-Host "Failed to call Connect-AzAccount: $($_.Exception.Message)" -ForegroundColor Red
                 return $False
             }
         }
     }
 
+    # Check if the required modules are installed and supported PowerShell version
     If($Checks)
     {
+        # Set ErrorActionPreference to Stop
         $ErrorActionPreference = "Stop"
+
+        # Check for supported PowerShell version
         $Version = $PSVersionTable.PSVersion.Major
         If ($Version -lt 5)
         {
+            # PowerShell version is not supported - 5.1 or later is required
             Write-Host "Az requires at least PowerShell 5.1 - Exiting..." -ForegroundColor Red
             Exit
         }
@@ -93,25 +104,42 @@ function Invoke-Script
         $Modules = Get-InstalledModule
         if ($Modules.Name -notcontains 'Az.Accounts' -and $Modules.Name -notcontains 'Az.Resources')
         {
+            # Az PowerShell Modules not installed - prompt the user to install the modules
             Write-host "Install Az PowerShell Modules?" -ForegroundColor Yellow 
             $Readhost = Read-Host " ( y / n ) " 
+
+            # Install Az PowerShell Modules if the user confirms
             if ($ReadHost -eq 'y' -or $Readhost -eq 'yes')
             {
-                Install-Module -Name Az -AllowClobber -Scope CurrentUser
-                $Modules = Get-InstalledModule       
-                if ($Modules.Name -contains 'Az.Accounts' -and $Modules.Name -contains 'Az.Resources')
-                {
-                    Write-Host "Successfully installed Az modules" -ForegroundColor Green
+                try {
+                    # Install Az PowerShell Modules
+                    Install-Module -Name Az -AllowClobber -Scope CurrentUser
+
+                    # Get installed modules
+                    $Modules = Get-InstalledModule
+
+                    # Check if the Az PowerShell Modules are installed
+                    if ($Modules.Name -contains 'Az.Accounts' -and $Modules.Name -contains 'Az.Resources')
+                    {
+                        Write-Host "Successfully installed Az modules" -ForegroundColor Green
+                    }
                 }
-            }	
+                catch {
+                    # Failed to install Az PowerShell Modules show error message
+                    Write-Host "Failed to install Az modules: $($_.Exception.Message)" -ForegroundColor Red
+                }                
+            }
+            # Exit if the user does not confirm to install the Az PowerShell Modules
             if ($ReadHost -eq 'n' -or $Readhost -eq 'no') 
             {
+                # User did not confirm to install the Az PowerShell Modules - exit
                 Write-Host "Az PowerShell not installed, This script cannot operate without this modules, exiting..." -ForegroundColor Red
                 Exit
             }
         }
         else
         {
+            # Az PowerShell Modules needed is installed!
             Write-Host "Az PowerShell Modules needed is installed - good!`n" -ForegroundColor Green
         }
 
@@ -122,14 +150,18 @@ function Invoke-Script
             Write-Host "Remember to login with Connect-AzAccount if you will create a custom role in Azure RBAC!`n" -ForegroundColor Yellow
         }
     }
+
+    # Banner
     if($Banner)
     {
-            Write-Host "Please set your default subscription with " -ForegroundColor yellow -NoNewline 
-            Write-Host "Set-AzContext " -ForegroundColor Magenta -NoNewline
-            Write-Host "if you have multiple subscriptions. Functions will fail if you not set one. Use "  -ForegroundColor yellow -NoNewline 
-            Write-Host "Get-AzSubscription" -ForegroundColor Magenta -NoNewline
-			Write-Host " to get a list of your subscriptions.`n" -ForegroundColor Yellow
+        Write-Host "Please set your default subscription with " -ForegroundColor yellow -NoNewline 
+        Write-Host "Set-AzContext " -ForegroundColor Magenta -NoNewline
+        Write-Host "if you have multiple subscriptions. Functions will fail if you not set one. Use "  -ForegroundColor yellow -NoNewline 
+        Write-Host "Get-AzSubscription" -ForegroundColor Magenta -NoNewline
+        Write-Host " to get a list of your subscriptions.`n" -ForegroundColor Yellow
     }
+
+    # If not logged in to Azure
     if(!$Checks -and !$CheckLogin -and !$Banner)
     {
         Write-Host "Please login with Connect-AzAccount" -ForegroundColor Red
@@ -140,23 +172,31 @@ function CheckConnectionToAzure {
     # Check if connected to Azure
     $azContext = Get-AzContext -ErrorAction SilentlyContinue
 
+    # If connected to Azure
     if ($azContext) {
+        # If connected to Azure - prompt for logout if connected to Azure before exiting the script
         Write-Host "You are currently connected to Azure." -ForegroundColor Yellow
-
         $confirmLogout = Read-Host "Do you want to log out from Azure? (Type 'yes' to confirm)"
 
+        # Check user confirmation
         if ($confirmLogout.ToLower() -eq 'yes' -or $confirmLogout.ToLower() -eq 'y') {
             try {
+                # Log out from Azure
                 Disconnect-AzAccount
+
+                # Show logged out from Azure
                 Write-Host "Logged out from Azure." -ForegroundColor Green
             } catch {
+                # Show error message if failed to log out from Azure
                 Write-Host "Not logged out from Azure." -ForegroundColor Red
                 Write-Host "An error occurred while logging out from Azure: $($_.Exception.Message)" -ForegroundColor Red
             }
         } else {
+            # Show message if the user selected to not logout from Azure - Session is active in your console
             Write-Host "You selected to not logout from Azure - Session is active in your console." -ForegroundColor Red
         }
     } else {
+        # Show message if not connected to Azure - do nothing
         Write-Host "You are not currently connected to Azure." -ForegroundColor Green
     }
 }
