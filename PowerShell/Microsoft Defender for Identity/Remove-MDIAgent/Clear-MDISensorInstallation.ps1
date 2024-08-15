@@ -12,30 +12,124 @@
 
     .EXAMPLE
         .\Clear-MDISensorInstallation.ps1
+
+    .EXAMPLE
+        .\Clear-MDISensorInstallation.ps1 -Debug
 #>
 
-function Clear-MDISensorInstallation {
-    # Define the regex pattern for GUID validation
-    $REGEX_GUID = '(?<guid>[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12})'
+param (
+    [switch]$Debug # Enable debug mode for verbose output
+)
 
-    # Function to validate that the path is not a root key
-    function IsValidRegistryPath {
-        param (
-            [string]$path,
-            [string]$guid
-        )
-        # Check if the path ends with the GUID (either with or without braces)
-        return $path -and $null -ne $path -and $guid -and ($path -like "*\$guid" -or $path -like "*\{$guid\}")
+# Define the regex pattern for GUID validation
+$REGEX_GUID = '(?<guid>[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12})'
+
+# Function to validate that the path is not a root key
+function IsValidRegistryPath {
+    param (
+        [string]$path,
+        [string]$guid
+    )
+    # Check if the path ends with the GUID (either with or without braces)
+    return $path -and $null -ne $path -and $guid -and ($path -like "*\$guid" -or $path -like "*\{$guid\}")
+}
+
+function Invoke-AsAdministrator {
+    # Check if the script is running as an administrator
+    if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
+        # Relaunch the script as an administrator
+        Start-Process powershell.exe "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`"" -Verb RunAs
+        # Exit the current script
+        Exit
     }
+    else {
+        Write-Host "Running as an administrator... All good!" -ForegroundColor Green
+    }
+}
 
-    # Display a message that the script is starting
-    Write-Host ""
+function Remove-ATPCertiticate {
+    # Remove the ATP certificate from Computer store based on name where the CN = "Azure ATP Sensor"
+    $certificateName = "Azure ATP Sensor"
+    $certificates = Get-ChildItem -Path Cert:\LocalMachine\My | Where-Object { $_.Subject -like "*$certificateName*" }
 
+    if ($certificates.Count -eq 0) {
+        Write-Host "No certificates found with the name: '$certificateName' and meets on the criterias" -ForegroundColor Yellow
+    } else {
+        $validCertificates = $certificates | Where-Object {
+            ($_.NotAfter - $_.NotBefore).Days -ge 730
+        }
+
+        if ($validCertificates.Count -eq 0) {
+            Write-Host "No certificates found with the name: '$certificateName' that are valid for 2 years." -ForegroundColor Yellow
+        } else {
+            Write-Host "`nFound the following certificates based on the criterias:`n"
+            Write-Host "----------------------------------------"
+            foreach ($certificate in $validCertificates) {
+                Write-Host "Subject: $($certificate.Subject), Issued Date: $($certificate.NotBefore), Expiration Date: $($certificate.NotAfter), Thumbprint: $($certificate.Thumbprint)" -ForegroundColor Yellow
+                Write-Host "----------------------------------------"
+            }
+            $confirmation = Read-Host "`nDo you want to remove all these certificates? (y/n)"
+            if ($confirmation -eq "y") {
+                Write-Host ""
+                foreach ($certificate in $validCertificates) {
+                    try {
+                        Remove-Item -Path $certificate.PSPath -Force
+                        Write-Host "Removed certificate: $($certificate.Subject), $($certificate.Thumbprint)" -ForegroundColor Green
+                    }
+                    catch {
+                        Write-Host "Failed to remove certificate: $($certificate.Subject), $($certificate.Thumbprint) - Error: $_" -ForegroundColor Red
+                    }
+                }
+            } else {
+                Write-Host "Skipped removal of certificates." -ForegroundColor Yellow
+            }
+        }
+    }
+}
+
+function Stop-NamedPipes {
+    param (
+        [string]$aatpsensorPID,
+        [string]$aatpsensorUpdaterPID
+    )
+
+    Write-Host "Stopping named pipes..."
+
+    # Define the named pipes
+    $namedPipes = @(
+        "\\.\pipe\CPFATP_${aatpsensorPID}_v4.0.30319",
+        "\\.\pipe\CPFATP_${aatpsensorUpdaterPID}_v4.0.30319"
+    )
+
+    # Loop through each named pipe and attempt to stop the service
+    foreach ($namedPipe in $namedPipes) {
+        if (Test-Path -Path $namedPipe) {
+            try {
+                Stop-Service -Name $namedPipe -Force -ErrorAction SilentlyContinue
+                Write-Host "Stopped named pipe: $namedPipe" -ForegroundColor Green
+            }
+            catch {
+                Write-Host "Failed to stop named pipe: $namedPipe - Error: $_" -ForegroundColor Red
+            }
+        } else {
+            Write-Host "Named pipe does not exist: $namedPipe - skipping!" -ForegroundColor Yellow
+        }
+    }
+}
+
+function Disable-Services {
     # Disable the services:
     Write-Host "Disabling services..."
     try {
-        Set-Service -Name aatpsensor -StartupType Disabled -ErrorAction SilentlyContinue
-        Set-Service -Name aatpsensorupdater -StartupType Disabled -ErrorAction SilentlyContinue
+        # Check if the services exist before disabling them
+        $aatpsensorService = Get-Service -Name aatpsensor -ErrorAction SilentlyContinue
+        $aatpsensorUpdaterService = Get-Service -Name aatpsensorupdater -ErrorAction SilentlyContinue
+
+        # If the services exist, disable them
+        if ($aatpsensorService -and $aatpsensorUpdaterService) {
+            Set-Service -Name aatpsensor -StartupType Disabled
+            Set-Service -Name aatpsensorupdater -StartupType Disabled
+        }       
         
         # Check if the services are disabled
         $aatpsensorService = Get-Service -Name aatpsensor -ErrorAction SilentlyContinue
@@ -59,14 +153,23 @@ function Clear-MDISensorInstallation {
     }
     catch {
         Write-Host "Failed to disable services - Error: $_" -ForegroundColor Red
-    }    
+    }
+}
 
+function Stop-Services{
     # Stop the services:
     Write-Host "Stopping services..."
     try {
-        Stop-Service -Name aatpsensor -Force -ErrorAction SilentlyContinue
-        Stop-Service -Name aatpsensorupdater -Force -ErrorAction SilentlyContinue
+        # Check if the services exist before stopping them
+        $aatpsensorService = Get-Service -Name aatpsensor -ErrorAction SilentlyContinue
+        $aatpsensorUpdaterService = Get-Service -Name aatpsensorupdater -ErrorAction SilentlyContinue
 
+        # If the services exist, stop them
+        if ($aatpsensorService -and $aatpsensorUpdaterService) {
+            Stop-Service -Name aatpsensorupdater -Force
+            Stop-Service -Name aatpsensor -Force
+        }
+        
         # Check if the services are stopped
         $aatpsensorService = Get-Service -Name aatpsensor -ErrorAction SilentlyContinue
         $aatpsensorUpdaterService = Get-Service -Name aatpsensorupdater -ErrorAction SilentlyContinue
@@ -89,18 +192,22 @@ function Clear-MDISensorInstallation {
     }
     catch {
         Write-Host "Failed to stop services - Error: $_" -ForegroundColor Red
-    }    
+    }
+}
 
+function Remove-Services
+{
     # Remove the services:
     Write-Host "Removing services..."
     try {
-        C:\Windows\System32\sc.exe delete aatpsensor | Out-Null
         C:\Windows\System32\sc.exe delete aatpsensorupdater | Out-Null
-
+        C:\Windows\System32\sc.exe delete aatpsensor | Out-Null
+        
         # Check if the services are removed
         $aatpsensorService = Get-Service -Name aatpsensor -ErrorAction SilentlyContinue
         $aatpsensorUpdaterService = Get-Service -Name aatpsensorupdater -ErrorAction SilentlyContinue
 
+        # Check if the services are removed successfully or not
         if ($null -eq $aatpsensorService -and $null -eq $aatpsensorUpdaterService) {
             Write-Host "Both services removed successfully." -ForegroundColor Green
         } elseif ($null -eq $aatpsensorService) {
@@ -113,7 +220,85 @@ function Clear-MDISensorInstallation {
     }
     catch {
         Write-Host "Failed to remove services - Error: $_" -ForegroundColor Red
-    }    
+    }
+}
+
+function Stop-Processes{
+    # Stop processes if they are running:
+    Write-Host "Stopping processes..."
+
+    # Define the processes to stop
+    $processesToStop = @(
+        'Microsoft.Tri.Sensor.exe',
+        'Microsoft.Tri.Sensor.Updater.exe'
+    )
+
+    # Loop through each process and attempt to stop it
+    foreach ($process in $processesToStop) {
+        $runningProcess = Get-Process -Name $process -ErrorAction SilentlyContinue
+        if ($runningProcess) {
+            try {
+                Stop-Process -Name $process -Force -ErrorAction SilentlyContinue
+                Write-Host "Stopped process: $process" -ForegroundColor Green
+            }
+            catch {
+                Write-Host "Failed to stop process: $process - Error: $_" -ForegroundColor Red
+            }
+        } else {
+            Write-Host "Process not running: $process - skipping!" -ForegroundColor Yellow
+        }
+    }
+
+    # Check if the processes are stopped
+    $runningProcesses = $processesToStop | ForEach-Object { Get-Process -Name $_ -ErrorAction SilentlyContinue }
+    if ($runningProcesses) {
+        Write-Host "Failed to stop all processes - still running: $($runningProcesses.Name -join ', ')" -ForegroundColor Red
+    } else {
+        Write-Host "All processes stopped successfully." -ForegroundColor Green
+    }
+}
+
+function Uninstall-NPCAP {
+    Write-Host "Checking for NPCAP installation..."
+
+    $npcapUninstallPath = "C:\Program Files\Npcap\Uninstall.exe"
+
+    if (Test-Path -Path $npcapUninstallPath) {
+        try {
+            Write-Host "Uninstalling NPCAP..."
+            Start-Process -FilePath $npcapUninstallPath -ArgumentList "/S" -Wait
+            Write-Host "NPCAP uninstalled successfully." -ForegroundColor Green
+        }
+        catch {
+            Write-Host "Failed to uninstall NPCAP - Error: $_" -ForegroundColor Red
+        }
+    } else {
+        Write-Host "NPCAP is not installed." -ForegroundColor Yellow
+    }
+}
+
+function Clear-MDISensorInstallation {
+    # Get the PID of the services (needed for later use)
+    $aatpsensorPID = Get-WmiObject -Class Win32_Service | Where-Object { $_.Name -eq 'aatpsensor' } | Select-Object -ExpandProperty ProcessId
+    $aatpsensorUpdaterPID = Get-WmiObject -Class Win32_Service | Where-Object { $_.Name -eq 'aatpsensorupdater' } | Select-Object -ExpandProperty ProcessId
+
+    # Call the functions to disable the services
+    Disable-Services
+
+    # Call the functions to stop the services
+    Stop-Services
+
+    # Call the functions to remove the services
+    Remove-Services
+
+    # Call the function to stop the processes
+    Stop-Processes
+
+    # Call the function to remove the running named pipes
+    Stop-NamedPipes -aatpsensorPID $aatpsensorPID -aatpsensorUpdaterPID $aatpsensorUpdaterPID
+
+    # Call the function to uninstall NPCAP
+    Uninstall-NPCAP
 
     # Find GUID´s and remove folders:
     Write-Host "Finding GUID´s..."
@@ -275,14 +460,17 @@ function Clear-MDISensorInstallation {
                 if (Test-Path -Path $pathToDelete1) {
                     Write-Host "Attempting to remove registry key: $pathToDelete1"
                     try {
-                        Remove-Item -Path $pathToDelete1 -Recurse -Force -ErrorAction SilentlyContinue
+                        Remove-Item -Path $pathToDelete1 -Recurse -Force
                         Write-Host "Removed registry key: $pathToDelete1" -ForegroundColor Green
                     }
                     catch {
-                        Write-Host "Failed to remove registry key: $pathToDelete1" -ForegroundColor Red
+                        Write-Host "Failed to remove registry key: $pathToDelete1 - Error: $_" -ForegroundColor Red
                     }
                 } else {
-                    Write-Host "Registry key does not exist: $pathToDelete1 - skipping (not neede to exist)!" -ForegroundColor Yellow
+                    if ($Debug)
+                    {
+                        Write-Host "Registry key does not exist: $pathToDelete1 - skipping (not needed to exist)!" -ForegroundColor Yellow
+                    }                    
                 }
             } else {
                 Write-Host "Skipping invalid registry key: $pathToDelete1" -ForegroundColor Yellow
@@ -293,18 +481,21 @@ function Clear-MDISensorInstallation {
                 if (Test-Path -Path $pathToDelete1NoBraces) {
                     Write-Host "Attempting to remove registry key: $pathToDelete1NoBraces"
                     try {
-                        Remove-Item -Path $pathToDelete1NoBraces -Recurse -Force -ErrorAction SilentlyContinue
+                        Remove-Item -Path $pathToDelete1NoBraces -Recurse -Force
                         if (-not (Test-Path -Path $pathToDelete1NoBraces)) {
                             Write-Host "Removed registry key: $pathToDelete1NoBraces" -ForegroundColor Green
                         } else {
-                            Write-Host "Failed to remove registry key: $pathToDelete1NoBraces" -ForegroundColor Red
+                            Write-Host "Failed to remove registry key: $pathToDelete1NoBraces - Error: $_" -ForegroundColor Red
                         }
                     }
                     catch {
                         Write-Host "Failed to remove registry key: $pathToDelete1NoBraces" -ForegroundColor Red
                     }
                 } else {
-                    Write-Host "Registry key does not exist: $pathToDelete1NoBraces - skipping (not neede to exist)!" -ForegroundColor Yellow
+                    if ($Debug)
+                    {
+                        Write-Host "Registry key does not exist: $pathToDelete1NoBraces - skipping (not needed to exist)!" -ForegroundColor Yellow
+                    }                    
                 }
             } else {
                 Write-Host "Skipping invalid registry key: $pathToDelete1NoBraces" -ForegroundColor Yellow
@@ -324,18 +515,21 @@ function Clear-MDISensorInstallation {
                 if (Test-Path -Path $pathToDelete2) {
                     Write-Host "Attempting to remove registry key: $pathToDelete2"
                     try {
-                        Remove-Item -Path $pathToDelete2 -Recurse -Force -ErrorAction SilentlyContinue
+                        Remove-Item -Path $pathToDelete2 -Recurse -Force
                         if (-not (Test-Path -Path $pathToDelete2)) {
                             Write-Host "Removed registry key: $pathToDelete2" -ForegroundColor Green
                         } else {
-                            Write-Host "Failed to remove registry key: $pathToDelete2" -ForegroundColor Red
+                            Write-Host "Failed to remove registry key: $pathToDelete2 - Error: $_" -ForegroundColor Red
                         }
                     }
                     catch {
                         Write-Host "Failed to remove registry key: $pathToDelete2" -ForegroundColor Red
                     }
                 } else {
-                    Write-Host "Registry key does not exist: $pathToDelete2 - skipping (not neede to exist)!" -ForegroundColor Yellow
+                    if ($Debug)
+                    {
+                        Write-Host "Registry key does not exist: $pathToDelete2 - skipping (not needed to exist)!" -ForegroundColor Yellow
+                    }                    
                 }
             } else {
                 Write-Host "Skipping invalid registry key: $pathToDelete2" -ForegroundColor Yellow
@@ -346,18 +540,21 @@ function Clear-MDISensorInstallation {
                 if (Test-Path -Path $pathToDelete2NoBraces) {
                     Write-Host "Attempting to remove registry key: $pathToDelete2NoBraces"
                     try {
-                        Remove-Item -Path $pathToDelete2NoBraces -Recurse -Force -ErrorAction SilentlyContinue
+                        Remove-Item -Path $pathToDelete2NoBraces -Recurse -Force
                         if (-not (Test-Path -Path $pathToDelete2NoBraces)) {
                             Write-Host "Removed registry key: $pathToDelete2NoBraces" -ForegroundColor Green
                         } else {
-                            Write-Host "Failed to remove registry key: $pathToDelete2NoBraces" -ForegroundColor Red
+                            Write-Host "Failed to remove registry key: $pathToDelete2NoBraces - Error: $_" -ForegroundColor Red
                         }
                     }
                     catch {
                         Write-Host "Failed to remove registry key: $pathToDelete2NoBraces" -ForegroundColor Red
                     }
                 } else {
-                    Write-Host "Registry key does not exist: $pathToDelete2NoBraces - skipping (not neede to exist)!" -ForegroundColor Yellow
+                    if ($Debug)
+                    {
+                        Write-Host "Registry key does not exist: $pathToDelete2NoBraces - skipping (not needed to exist)!" -ForegroundColor Yellow
+                    }                    
                 }
             } else {
                 Write-Host "Skipping invalid registry key: $pathToDelete2NoBraces" -ForegroundColor Yellow
@@ -377,18 +574,21 @@ function Clear-MDISensorInstallation {
                 if (Test-Path -Path $pathToDelete3) {
                     Write-Host "Attempting to remove registry key: $pathToDelete3"
                     try {
-                        Remove-Item -Path $pathToDelete3 -Recurse -Force -ErrorAction SilentlyContinue
+                        Remove-Item -Path $pathToDelete3 -Recurse -Force
                         if (-not (Test-Path -Path $pathToDelete3)) {
                             Write-Host "Removed registry key: $pathToDelete3" -ForegroundColor Green
                         } else {
-                            Write-Host "Failed to remove registry key: $pathToDelete3" -ForegroundColor Red
+                            Write-Host "Failed to remove registry key: $pathToDelete3 - Error: $_" -ForegroundColor Red
                         }
                     }
                     catch {
                         Write-Host "Failed to remove registry key: $pathToDelete3" -ForegroundColor Red
                     }
                 } else {
-                    Write-Host "Registry key does not exist: $pathToDelete3 - skipping (not neede to exist)!" -ForegroundColor Yellow
+                    if ($Debug)
+                    {
+                        Write-Host "Registry key does not exist: $pathToDelete3 - skipping (not needed to exist)!" -ForegroundColor Yellow
+                    }                    
                 }
             } else {
                 Write-Host "Skipping invalid registry key: $pathToDelete3" -ForegroundColor Yellow
@@ -399,18 +599,21 @@ function Clear-MDISensorInstallation {
                 if (Test-Path -Path $pathToDelete3NoBraces) {
                     Write-Host "Attempting to remove registry key: $pathToDelete3NoBraces"
                     try {
-                        Remove-Item -Path $pathToDelete3NoBraces -Recurse -Force -ErrorAction SilentlyContinue
+                        Remove-Item -Path $pathToDelete3NoBraces -Recurse -Force
                         if (-not (Test-Path -Path $pathToDelete3NoBraces)) {
                             Write-Host "Removed registry key: $pathToDelete3NoBraces" -ForegroundColor Green
                         } else {
-                            Write-Host "Failed to remove registry key: $pathToDelete3NoBraces" -ForegroundColor Red
+                            Write-Host "Failed to remove registry key: $pathToDelete3NoBraces - Error: $_" -ForegroundColor Red
                         }
                     }
                     catch {
                         Write-Host "Failed to remove registry key: $pathToDelete3NoBraces" -ForegroundColor Red
                     }
                 } else {
-                    Write-Host "Registry key does not exist: $pathToDelete3NoBraces - skipping (not neede to exist)!" -ForegroundColor Yellow
+                    if ($Debug)
+                    {
+                        Write-Host "Registry key does not exist: $pathToDelete3NoBraces - skipping (not needed to exist)!" -ForegroundColor Yellow
+                    }                    
                 }
             } else {
                 Write-Host "Skipping invalid registry key: $pathToDelete3NoBraces" -ForegroundColor Yellow
@@ -430,18 +633,21 @@ function Clear-MDISensorInstallation {
                 if (Test-Path -Path $pathToDelete4) {
                     Write-Host "Attempting to remove registry key: $pathToDelete4"
                     try {
-                        Remove-Item -Path $pathToDelete4 -Recurse -Force -ErrorAction SilentlyContinue
+                        Remove-Item -Path $pathToDelete4 -Recurse -Force
                         if (-not (Test-Path -Path $pathToDelete4)) {
                             Write-Host "Removed registry key: $pathToDelete4" -ForegroundColor Green
                         } else {
-                            Write-Host "Failed to remove registry key: $pathToDelete4" -ForegroundColor
+                            Write-Host "Failed to remove registry key: $pathToDelete4 - Error: $_" -ForegroundColor
                         }
                     }
                     catch {
                         Write-Host "Failed to remove registry key: $pathToDelete4" -ForegroundColor Red
                     }
                 } else {
-                    Write-Host "Registry key does not exist: $pathToDelete4 - skipping (not neede to exist)!" -ForegroundColor Yellow
+                    if ($Debug)
+                    {
+                        Write-Host "Registry key does not exist: $pathToDelete4 - skipping (not needed to exist)!" -ForegroundColor Yellow
+                    }                    
                 }
             } else {
                 Write-Host "Skipping invalid registry key: $pathToDelete4" -ForegroundColor Yellow
@@ -452,18 +658,21 @@ function Clear-MDISensorInstallation {
                 if (Test-Path -Path $pathToDelete4NoBraces) {
                     Write-Host "Attempting to remove registry key: $pathToDelete4NoBraces"
                     try {
-                        Remove-Item -Path $pathToDelete4NoBraces -Recurse -Force -ErrorAction SilentlyContinue
+                        Remove-Item -Path $pathToDelete4NoBraces -Recurse -Force
                         if (-not (Test-Path -Path $pathToDelete4NoBraces)) {
                             Write-Host "Removed registry key: $pathToDelete4NoBraces" -ForegroundColor Green
                         } else {
-                            Write-Host "Failed to remove registry key: $pathToDelete4NoBraces" -ForegroundColor Red
+                            Write-Host "Failed to remove registry key: $pathToDelete4NoBraces - Error: $_" -ForegroundColor Red
                         }
                     }
                     catch {
                         Write-Host "Failed to remove registry key: $pathToDelete4NoBraces" -ForegroundColor Red
                     }
                 } else {
-                    Write-Host "Registry key does not exist: $pathToDelete4NoBraces - skipping (not neede to exist)!" -ForegroundColor Yellow
+                    if ($Debug)
+                    {
+                        Write-Host "Registry key does not exist: $pathToDelete4NoBraces - skipping (not needed to exist)!" -ForegroundColor Yellow
+                    }                    
                 }
             } else {
                 Write-Host "Skipping invalid registry key: $pathToDelete4NoBraces" -ForegroundColor Yellow
@@ -471,17 +680,35 @@ function Clear-MDISensorInstallation {
         }
     }
 
+    # Call the function to remove the ATP certificate
+    Remove-ATPCertiticate
+
     # Display done message as a banner
-    $bannerMessage = "Manual removal tasks completed successfully. Please verify that all components have been removed correctly!"
-    $bannerLength = $bannerMessage.Length + 4
+    $bannerMessage = "Manual removal tasks completed successfully on $($env:COMPUTERNAME)!`n`nRemember to remove the sensor from the Microsoft Defender for Identity portal here:`n`nhttps://security.microsoft.com/securitysettings/identities?tabid=sensor"
+
+    # Split the message into lines and find the length of the longest line
+    $bannerLines = $bannerMessage -split "`n"
+    $maxLineLength = ($bannerLines | Measure-Object -Property Length -Maximum).Maximum
+
+    # Add padding for the border
+    $bannerLength = $maxLineLength + 4
     $bannerBorder = "*" * $bannerLength
 
     Write-Host ""
     Write-Host $bannerBorder -ForegroundColor Green
-    Write-Host "* $bannerMessage *" -ForegroundColor Green
+
+    # Write each line with padding
+    foreach ($line in $bannerLines) {
+        $paddedLine = "* " + $line.PadRight($maxLineLength) + " *"
+        Write-Host $paddedLine -ForegroundColor Green
+    }
+
     Write-Host $bannerBorder -ForegroundColor Green
     Write-Host ""
 }
+
+# Run the script as an administrator/check if the script is running as an administrator
+Invoke-AsAdministrator
 
 # Display a risk warning banner
 # Define the warning messages with new lines before and after
@@ -509,27 +736,29 @@ Write-Host ""
 Write-Host $banner -ForegroundColor Red
 Write-Host ""
 
+# Show beta warning message
+Write-Host "This script is in beta and may not work as expected. Use at your own risk!`n" -ForegroundColor Yellow
+
 # Ask to confirm the removal of the registry keys, files, services, and the sensor installation
 $confirm = Read-Host "Do you accept the risk and want to remove the sensor installation? (Y/N)"
 if ($confirm -eq "Y") {
     #Ask for confirmation before proceeding again
-    Write-Host ""
-    Write-Host "!! This action is irreversible and may cause issues with the sensor installation !!" -ForegroundColor Red
-    Write-Host ""
+    Write-Host "`n!! This action is irreversible and may cause issues with the sensor installation !!`n" -ForegroundColor Red
     $confirm2 = Read-Host "Are you still sure you want to remove the sensor installation??! (Y/N)"
     if ($confirm2 -eq "Y") {
+        Write-Host ""
         Clear-MDISensorInstallation
     } else {
-        Write-Host "Sensor installation not removed - not confirmed second time"
+        Write-Host "Sensor installation not removed - not confirmed by user second time" -ForegroundColor Yellow
     }
 } else {
-    Write-Host "Sensor installation not removed - not confirmed"
+    Write-Host "Sensor installation not removed - not confirmed by user" -ForegroundColor Yellow
 }
 # SIG # Begin signature block
-# MIIuawYJKoZIhvcNAQcCoIIuXDCCLlgCAQExDzANBglghkgBZQMEAgEFADB5Bgor
+# MIIubAYJKoZIhvcNAQcCoIIuXTCCLlkCAQExDzANBglghkgBZQMEAgEFADB5Bgor
 # BgEEAYI3AgEEoGswaTA0BgorBgEEAYI3AgEeMCYCAwEAAAQQH8w7YFlLCE63JNLG
-# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCCKSmQwFqB0syJY
-# 66vWlghBtqR5iYqfDIpgRjQi5vPZcaCCEd8wggVvMIIEV6ADAgECAhBI/JO0YFWU
+# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCCnX3kckn2vOk3N
+# 0qtchd/2aw7Z9o3/Dmteprah9G9QO6CCEd8wggVvMIIEV6ADAgECAhBI/JO0YFWU
 # jTanyYqJ1pQWMA0GCSqGSIb3DQEBDAUAMHsxCzAJBgNVBAYTAkdCMRswGQYDVQQI
 # DBJHcmVhdGVyIE1hbmNoZXN0ZXIxEDAOBgNVBAcMB1NhbGZvcmQxGjAYBgNVBAoM
 # EUNvbW9kbyBDQSBMaW1pdGVkMSEwHwYDVQQDDBhBQUEgQ2VydGlmaWNhdGUgU2Vy
@@ -624,154 +853,154 @@ if ($confirm -eq "Y") {
 # MA62TOXQJrK+x9DtVY8QCb+IUZNYj6lNiXno3t69JN6FvIU2EtPrKs8SBV2uDZQM
 # ecNJ+3w77/EHod82uB73vGiOvX8Q2CkdMunz+VfXyY4Oh10AEnCqzl0UV2HHH66H
 # sa8Zti+kXWH9HTUkDJCd2VHdDEOJ0o2kA1/SfETMPAO/yeFz1xXy6CIJ50dkfzuY
-# gf9SsIAod1Dx9THs2qkXIwyf5lTJBvPHLRqxs/k+Mn70AUiyj50/JYMxghviMIIb
-# 3gIBATBoMFQxCzAJBgNVBAYTAkdCMRgwFgYDVQQKEw9TZWN0aWdvIExpbWl0ZWQx
+# gf9SsIAod1Dx9THs2qkXIwyf5lTJBvPHLRqxs/k+Mn70AUiyj50/JYMxghvjMIIb
+# 3wIBATBoMFQxCzAJBgNVBAYTAkdCMRgwFgYDVQQKEw9TZWN0aWdvIExpbWl0ZWQx
 # KzApBgNVBAMTIlNlY3RpZ28gUHVibGljIENvZGUgU2lnbmluZyBDQSBSMzYCEBHh
 # oIZkh66CYIKNKPBResYwDQYJYIZIAWUDBAIBBQCgfDAQBgorBgEEAYI3AgEMMQIw
 # ADAZBgkqhkiG9w0BCQMxDAYKKwYBBAGCNwIBBDAcBgorBgEEAYI3AgELMQ4wDAYK
-# KwYBBAGCNwIBFTAvBgkqhkiG9w0BCQQxIgQgDVc0MT2HcohKCIzziadaLz+9Qrrr
-# Lf+J+ngh1/KqQF0wDQYJKoZIhvcNAQEBBQAEggIAj8is5HT0+4Nz810xj0xOf9ug
-# h2VxdWqX1LYME6dG98BooofaQdtmBtzFdf/nPO+4HPojDGrUo/2BxLnHUDSk7Vib
-# EQ9sNTsUn2SrR29goohi9n1EdfcOuZNwqq0ZVCm5d84EchCe+skwIAJeaY7mOf1k
-# s0FMLNzxWNBO8W1tdu4hbsQ/ArN3fIMiq9hppHdDGJqO0tc6QaJaxdHgyxg5ZCas
-# GI8qhHoskVw0W1IvHTBVki14Z/m4eRZZ85pZvGlwgFCE8umG4Jx+Rr3ys5iGyTOK
-# rqY2GGAgyO3WaKBUVesREwUnylQjXLP23h4FcffvZ/i2/D7gEZNf5uIg7kbRizRr
-# ZrRHXCz7ZfSDhfvGgGQeBxs+rWmRAng5bxHx9Dq5EIT1oyo32eyLvgZ9juQ1Y92e
-# rlku2sYhXEuag1wrwVFy34PJDbUAxcOh80+tEYmOm8g+1dB2tXBIop90XW9uwYTG
-# XVauyJ9eDTaegIqC4ud3FY3t9Feb/pq0nUJRVzjMppGdsWdrhSgBb0h1lrVijwtL
-# Rw3gFPzUUvL+qcYPnSitO/z6If7pBHL6KYbbnaYyE0fxkM02GoFNmVneIKQXmp30
-# t2/O/jian30HOPYl8LRt37pVvkTGv/cBEFc3MXk3LJBVYX0VaWDLKcctFN2MaKTU
-# 7RYcGMTGESSMk6jhLIyhghjNMIIYyQYKKwYBBAGCNwMDATGCGLkwghi1BgkqhkiG
-# 9w0BBwKgghimMIIYogIBAzEPMA0GCWCGSAFlAwQCAgUAMIHzBgsqhkiG9w0BCRAB
-# BKCB4wSB4DCB3QIBAQYKKwYBBAGyMQIBATAxMA0GCWCGSAFlAwQCAQUABCCdu0+r
-# QMajnSHFu+nRbWdUHm5vSD9L2ulcUe0Pj2OppAIUGApV/Z/oQeTYtouWFUbBHu9z
-# gYUYDzIwMjQwODE0MTgxOTQ2WqBypHAwbjELMAkGA1UEBhMCR0IxEzARBgNVBAgT
-# Ck1hbmNoZXN0ZXIxGDAWBgNVBAoTD1NlY3RpZ28gTGltaXRlZDEwMC4GA1UEAxMn
-# U2VjdGlnbyBQdWJsaWMgVGltZSBTdGFtcGluZyBTaWduZXIgUjM1oIIS/zCCBl0w
-# ggTFoAMCAQICEDpSaiyEzlXmHWX8zBLY6YkwDQYJKoZIhvcNAQEMBQAwVTELMAkG
-# A1UEBhMCR0IxGDAWBgNVBAoTD1NlY3RpZ28gTGltaXRlZDEsMCoGA1UEAxMjU2Vj
-# dGlnbyBQdWJsaWMgVGltZSBTdGFtcGluZyBDQSBSMzYwHhcNMjQwMTE1MDAwMDAw
-# WhcNMzUwNDE0MjM1OTU5WjBuMQswCQYDVQQGEwJHQjETMBEGA1UECBMKTWFuY2hl
-# c3RlcjEYMBYGA1UEChMPU2VjdGlnbyBMaW1pdGVkMTAwLgYDVQQDEydTZWN0aWdv
-# IFB1YmxpYyBUaW1lIFN0YW1waW5nIFNpZ25lciBSMzUwggIiMA0GCSqGSIb3DQEB
-# AQUAA4ICDwAwggIKAoICAQCN0Wf0wUibvf04STpNYYGbw9jcRaVhBDaNBp7jmJaA
-# 9dQZW5ighrXGNMYjK7Dey5RIHMqLIbT9z9if753mYbojJrKWO4ZP0N5dBT2TwZZa
-# Pb8E+hqaDZ8Vy2c+x1NiEwbEzTrPX4W3QFq/zJvDDbWKL99qLL42GJQzX3n5wWo6
-# 0KklfFn+Wb22mOZWYSqkCVGl8aYuE12SqIS4MVO4PUaxXeO+4+48YpQlNqbc/ndT
-# gszRQLF4MjxDPjRDD1M9qvpLTZcTGVzxfViyIToRNxPP6DUiZDU6oXARrGwyP9ag
-# lPXwYbkqI2dLuf9fiIzBugCDciOly8TPDgBkJmjAfILNiGcVEzg+40xUdhxNcaC+
-# 6r0juPiR7bzXHh7v/3RnlZuT3ZGstxLfmE7fRMAFwbHdDz5gtHLqjSTXDiNF58Ix
-# PtvmZPG2rlc+Yq+2B8+5pY+QZn+1vEifI0MDtiA6BxxQuOnj4PnqDaK7NEKwtD1p
-# zoA3jJFuoJiwbatwhDkg1PIjYnMDbDW+wAc9FtRN6pUsO405jaBgigoFZCw9hWjL
-# NqgFVTo7lMb5rVjJ9aSBVVL2dcqzyFW2LdWk5Xdp65oeeOALod7YIIMv1pbqC15R
-# 7QCYLxcK1bCl4/HpBbdE5mjy9JR70BHuYx27n4XNOZbwrXcG3wZf9gEUk7stbPAo
-# BQIDAQABo4IBjjCCAYowHwYDVR0jBBgwFoAUX1jtTDF6omFCjVKAurNhlxmiMpsw
-# HQYDVR0OBBYEFGjvpDJJabZSOB3qQzks9BRqngyFMA4GA1UdDwEB/wQEAwIGwDAM
-# BgNVHRMBAf8EAjAAMBYGA1UdJQEB/wQMMAoGCCsGAQUFBwMIMEoGA1UdIARDMEEw
-# NQYMKwYBBAGyMQECAQMIMCUwIwYIKwYBBQUHAgEWF2h0dHBzOi8vc2VjdGlnby5j
-# b20vQ1BTMAgGBmeBDAEEAjBKBgNVHR8EQzBBMD+gPaA7hjlodHRwOi8vY3JsLnNl
-# Y3RpZ28uY29tL1NlY3RpZ29QdWJsaWNUaW1lU3RhbXBpbmdDQVIzNi5jcmwwegYI
-# KwYBBQUHAQEEbjBsMEUGCCsGAQUFBzAChjlodHRwOi8vY3J0LnNlY3RpZ28uY29t
-# L1NlY3RpZ29QdWJsaWNUaW1lU3RhbXBpbmdDQVIzNi5jcnQwIwYIKwYBBQUHMAGG
-# F2h0dHA6Ly9vY3NwLnNlY3RpZ28uY29tMA0GCSqGSIb3DQEBDAUAA4IBgQCw3C7J
-# +k82TIov9slP1e8YTx+fDsa//hJ62Y6SMr2E89rv82y/n8we5W6z5pfBEWozlW7n
-# Wp+sdPCdUTFw/YQcqvshH6b9Rvs9qZp5Z+V7nHwPTH8yzKwgKzTTG1I1XEXLAK9f
-# HnmXpaDeVeI8K6Lw3iznWZdLQe3zl+Rejdq5l2jU7iUfMkthfhFmi+VVYPkR/BXp
-# V7Ub1QyyWebqkjSHJHRmv3lBYbQyk08/S7TlIeOr9iQ+UN57fJg4QI0yqdn6Pyie
-# hS1nSgLwKRs46T8A6hXiSn/pCXaASnds0LsM5OVoKYfbgOOlWCvKfwUySWoSgrhn
-# cihSBXxH2pAuDV2vr8GOCEaePZc0Dy6O1rYnKjGmqm/IRNkJghSMizr1iIOPN+23
-# futBXAhmx8Ji/4NTmyH9K0UvXHiuA2Pa3wZxxR9r9XeIUVb2V8glZay+2ULlc445
-# CzCvVSZV01ZB6bgvCuUuBx079gCcepjnZDCcEuIC5Se4F6yFaZ8RvmiJ4hgwggYU
-# MIID/KADAgECAhB6I67aU2mWD5HIPlz0x+M/MA0GCSqGSIb3DQEBDAUAMFcxCzAJ
-# BgNVBAYTAkdCMRgwFgYDVQQKEw9TZWN0aWdvIExpbWl0ZWQxLjAsBgNVBAMTJVNl
-# Y3RpZ28gUHVibGljIFRpbWUgU3RhbXBpbmcgUm9vdCBSNDYwHhcNMjEwMzIyMDAw
-# MDAwWhcNMzYwMzIxMjM1OTU5WjBVMQswCQYDVQQGEwJHQjEYMBYGA1UEChMPU2Vj
-# dGlnbyBMaW1pdGVkMSwwKgYDVQQDEyNTZWN0aWdvIFB1YmxpYyBUaW1lIFN0YW1w
-# aW5nIENBIFIzNjCCAaIwDQYJKoZIhvcNAQEBBQADggGPADCCAYoCggGBAM2Y2ENB
-# q26CK+z2M34mNOSJjNPvIhKAVD7vJq+MDoGD46IiM+b83+3ecLvBhStSVjeYXIjf
-# a3ajoW3cS3ElcJzkyZlBnwDEJuHlzpbN4kMH2qRBVrjrGJgSlzzUqcGQBaCxpect
-# RGhhnOSwcjPMI3G0hedv2eNmGiUbD12OeORN0ADzdpsQ4dDi6M4YhoGE9cbY11Xx
-# M2AVZn0GiOUC9+XE0wI7CQKfOUfigLDn7i/WeyxZ43XLj5GVo7LDBExSLnh+va8W
-# xTlA+uBvq1KO8RSHUQLgzb1gbL9Ihgzxmkdp2ZWNuLc+XyEmJNbD2OIIq/fWlwBp
-# 6KNL19zpHsODLIsgZ+WZ1AzCs1HEK6VWrxmnKyJJg2Lv23DlEdZlQSGdF+z+Gyn9
-# /CRezKe7WNyxRf4e4bwUtrYE2F5Q+05yDD68clwnweckKtxRaF0VzN/w76kOLIaF
-# Vhf5sMM/caEZLtOYqYadtn034ykSFaZuIBU9uCSrKRKTPJhWvXk4CllgrwIDAQAB
-# o4IBXDCCAVgwHwYDVR0jBBgwFoAU9ndq3T/9ARP/FqFsggIv0Ao9FCUwHQYDVR0O
-# BBYEFF9Y7UwxeqJhQo1SgLqzYZcZojKbMA4GA1UdDwEB/wQEAwIBhjASBgNVHRMB
-# Af8ECDAGAQH/AgEAMBMGA1UdJQQMMAoGCCsGAQUFBwMIMBEGA1UdIAQKMAgwBgYE
-# VR0gADBMBgNVHR8ERTBDMEGgP6A9hjtodHRwOi8vY3JsLnNlY3RpZ28uY29tL1Nl
-# Y3RpZ29QdWJsaWNUaW1lU3RhbXBpbmdSb290UjQ2LmNybDB8BggrBgEFBQcBAQRw
-# MG4wRwYIKwYBBQUHMAKGO2h0dHA6Ly9jcnQuc2VjdGlnby5jb20vU2VjdGlnb1B1
-# YmxpY1RpbWVTdGFtcGluZ1Jvb3RSNDYucDdjMCMGCCsGAQUFBzABhhdodHRwOi8v
-# b2NzcC5zZWN0aWdvLmNvbTANBgkqhkiG9w0BAQwFAAOCAgEAEtd7IK0ONVgMnoEd
-# JVj9TC1ndK/HYiYh9lVUacahRoZ2W2hfiEOyQExnHk1jkvpIJzAMxmEc6ZvIyHI5
-# UkPCbXKspioYMdbOnBWQUn733qMooBfIghpR/klUqNxx6/fDXqY0hSU1OSkkSivt
-# 51UlmJElUICZYBodzD3M/SFjeCP59anwxs6hwj1mfvzG+b1coYGnqsSz2wSKr+nD
-# O+Db8qNcTbJZRAiSazr7KyUJGo1c+MScGfG5QHV+bps8BX5Oyv9Ct36Y4Il6ajTq
-# V2ifikkVtB3RNBUgwu/mSiSUice/Jp/q8BMk/gN8+0rNIE+QqU63JoVMCMPY2752
-# LmESsRVVoypJVt8/N3qQ1c6FibbcRabo3azZkcIdWGVSAdoLgAIxEKBeNh9AQO1g
-# Qrnh1TA8ldXuJzPSuALOz1Ujb0PCyNVkWk7hkhVHfcvBfI8NtgWQupiaAeNHe0pW
-# SGH2opXZYKYG4Lbukg7HpNi/KqJhue2Keak6qH9A8CeEOB7Eob0Zf+fU+CCQaL0c
-# Jqlmnx9HCDxF+3BLbUufrV64EbTI40zqegPZdA+sXCmbcZy6okx/SjwsusWRItFA
-# 3DE8MORZeFb6BmzBtqKJ7l939bbKBy2jvxcJI98Va95Q5JnlKor3m0E7xpMeYRri
-# WklUPsetMSf2NvUQa/E5vVyefQIwggaCMIIEaqADAgECAhA2wrC9fBs656Oz3TbL
-# yXVoMA0GCSqGSIb3DQEBDAUAMIGIMQswCQYDVQQGEwJVUzETMBEGA1UECBMKTmV3
-# IEplcnNleTEUMBIGA1UEBxMLSmVyc2V5IENpdHkxHjAcBgNVBAoTFVRoZSBVU0VS
-# VFJVU1QgTmV0d29yazEuMCwGA1UEAxMlVVNFUlRydXN0IFJTQSBDZXJ0aWZpY2F0
-# aW9uIEF1dGhvcml0eTAeFw0yMTAzMjIwMDAwMDBaFw0zODAxMTgyMzU5NTlaMFcx
-# CzAJBgNVBAYTAkdCMRgwFgYDVQQKEw9TZWN0aWdvIExpbWl0ZWQxLjAsBgNVBAMT
-# JVNlY3RpZ28gUHVibGljIFRpbWUgU3RhbXBpbmcgUm9vdCBSNDYwggIiMA0GCSqG
-# SIb3DQEBAQUAA4ICDwAwggIKAoICAQCIndi5RWedHd3ouSaBmlRUwHxJBZvMWhUP
-# 2ZQQRLRBQIF3FJmp1OR2LMgIU14g0JIlL6VXWKmdbmKGRDILRxEtZdQnOh2qmcxG
-# zjqemIk8et8sE6J+N+Gl1cnZocew8eCAawKLu4TRrCoqCAT8uRjDeypoGJrruH/d
-# rCio28aqIVEn45NZiZQI7YYBex48eL78lQ0BrHeSmqy1uXe9xN04aG0pKG9ki+PC
-# 6VEfzutu6Q3IcZZfm00r9YAEp/4aeiLhyaKxLuhKKaAdQjRaf/h6U13jQEV1JnUT
-# Cm511n5avv4N+jSVwd+Wb8UMOs4netapq5Q/yGyiQOgjsP/JRUj0MAT9YrcmXcLg
-# srAimfWY3MzKm1HCxcquinTqbs1Q0d2VMMQyi9cAgMYC9jKc+3mW62/yVl4jnDcw
-# 6ULJsBkOkrcPLUwqj7poS0T2+2JMzPP+jZ1h90/QpZnBkhdtixMiWDVgh60KmLmz
-# XiqJc6lGwqoUqpq/1HVHm+Pc2B6+wCy/GwCcjw5rmzajLbmqGygEgaj/OLoanEWP
-# 6Y52Hflef3XLvYnhEY4kSirMQhtberRvaI+5YsD3XVxHGBjlIli5u+NrLedIxsE8
-# 8WzKXqZjj9Zi5ybJL2WjeXuOTbswB7XjkZbErg7ebeAQUQiS/uRGZ58NHs57ZPUf
-# ECcgJC+v2wIDAQABo4IBFjCCARIwHwYDVR0jBBgwFoAUU3m/WqorSs9UgOHYm8Cd
-# 8rIDZsswHQYDVR0OBBYEFPZ3at0//QET/xahbIICL9AKPRQlMA4GA1UdDwEB/wQE
-# AwIBhjAPBgNVHRMBAf8EBTADAQH/MBMGA1UdJQQMMAoGCCsGAQUFBwMIMBEGA1Ud
-# IAQKMAgwBgYEVR0gADBQBgNVHR8ESTBHMEWgQ6BBhj9odHRwOi8vY3JsLnVzZXJ0
-# cnVzdC5jb20vVVNFUlRydXN0UlNBQ2VydGlmaWNhdGlvbkF1dGhvcml0eS5jcmww
-# NQYIKwYBBQUHAQEEKTAnMCUGCCsGAQUFBzABhhlodHRwOi8vb2NzcC51c2VydHJ1
-# c3QuY29tMA0GCSqGSIb3DQEBDAUAA4ICAQAOvmVB7WhEuOWhxdQRh+S3OyWM637a
-# yBeR7djxQ8SihTnLf2sABFoB0DFR6JfWS0snf6WDG2gtCGflwVvcYXZJJlFfym1D
-# oi+4PfDP8s0cqlDmdfyGOwMtGGzJ4iImyaz3IBae91g50QyrVbrUoT0mUGQHbRcF
-# 57olpfHhQEStz5i6hJvVLFV/ueQ21SM99zG4W2tB1ExGL98idX8ChsTwbD/zIExA
-# opoe3l6JrzJtPxj8V9rocAnLP2C8Q5wXVVZcbw4x4ztXLsGzqZIiRh5i111TW7HV
-# 1AtsQa6vXy633vCAbAOIaKcLAo/IU7sClyZUk62XD0VUnHD+YvVNvIGezjM6CRpc
-# Wed/ODiptK+evDKPU2K6synimYBaNH49v9Ih24+eYXNtI38byt5kIvh+8aW88WTh
-# Rpv8lUJKaPn37+YHYafob9Rg7LyTrSYpyZoBmwRWSE4W6iPjB7wJjJpH29308Zkp
-# KKdpkiS9WNsf/eeUtvRrtIEiSJHN899L1P4l6zKVsdrUu1FX1T/ubSrsxrYJD+3f
-# 3aKg6yxdbugot06YwGXXiy5UUGZvOu3lXlxA+fC13dQ5OlL2gIb5lmF6Ii8+CQOY
-# DwXM+yd9dbmocQsHjcRPsccUd5E9FiswEqORvz8g3s+jR3SFCgXhN4wz7NgAnOgp
-# CdUo4uDyllU9PzGCBJEwggSNAgEBMGkwVTELMAkGA1UEBhMCR0IxGDAWBgNVBAoT
-# D1NlY3RpZ28gTGltaXRlZDEsMCoGA1UEAxMjU2VjdGlnbyBQdWJsaWMgVGltZSBT
-# dGFtcGluZyBDQSBSMzYCEDpSaiyEzlXmHWX8zBLY6YkwDQYJYIZIAWUDBAICBQCg
-# ggH5MBoGCSqGSIb3DQEJAzENBgsqhkiG9w0BCRABBDAcBgkqhkiG9w0BCQUxDxcN
-# MjQwODE0MTgxOTQ2WjA/BgkqhkiG9w0BCQQxMgQwQvaOD61xZdJkbosIXqEUt/uv
-# Gw0DDbu4VLM/D1GH0d5QuOPprL/Xq4/0qukV2x3NMIIBegYLKoZIhvcNAQkQAgwx
-# ggFpMIIBZTCCAWEwFgQU+GCYGab7iCz36FKX8qEZUhoWd18wgYcEFMauVOR4hvF8
-# PVUSSIxpw0p6+cLdMG8wW6RZMFcxCzAJBgNVBAYTAkdCMRgwFgYDVQQKEw9TZWN0
-# aWdvIExpbWl0ZWQxLjAsBgNVBAMTJVNlY3RpZ28gUHVibGljIFRpbWUgU3RhbXBp
-# bmcgUm9vdCBSNDYCEHojrtpTaZYPkcg+XPTH4z8wgbwEFIU9Yy2TgoJhfNCQNcSR
-# 3pLBQtrHMIGjMIGOpIGLMIGIMQswCQYDVQQGEwJVUzETMBEGA1UECBMKTmV3IEpl
-# cnNleTEUMBIGA1UEBxMLSmVyc2V5IENpdHkxHjAcBgNVBAoTFVRoZSBVU0VSVFJV
-# U1QgTmV0d29yazEuMCwGA1UEAxMlVVNFUlRydXN0IFJTQSBDZXJ0aWZpY2F0aW9u
-# IEF1dGhvcml0eQIQNsKwvXwbOuejs902y8l1aDANBgkqhkiG9w0BAQEFAASCAgBJ
-# PgT5bHKHQeDELgIU5C0jh89gzzcFv59tp0+zMAI30xw8zaJWk/YIX5UVoeMAuxoz
-# nxPl1JqHEwLpnypuk8mzwl0CBKQG+cFe4MuCimNYvBb5lQv+k+Ge2VEGh09Ul/To
-# JqxQe0rryds0NyvYr7/L4wVmEdgag3uu5Ar1YyvTrIWbmJgw9ps+LJLOciIuZ/31
-# bSni3/1w2n4QUVhblfT31sGgsCiJYZiMCL1sv8z7mVN8q6BomiHdhmV+TzgtERTM
-# l5ZJOgcj9n2ctLD6FSYIS2ZutXHTmOW2FIQn3vqytbzao+MdvuCwwe/TWed4YA01
-# Nx/aEMCxrmzUr9OtDcsBZ2Al0qcPPCrLCG04hKFM9p9l23grD+bnN2RXjvbbmH1N
-# iEcRf8wRWfMEvnAP0JcYh3UPeWwRw15H7tN5YQN3QAtDfwcTNwpcTxXgaCIr+oEF
-# sZSWfL04JzF//eXtiqbUTOUmFKOwx9whYOqCOT0Kk0NabGbFRd8VW6jhm31p3Ln4
-# SJVcBQESI2qjOL64LmsVfwwyZG9jDLQBxEG/ldq0Wh+RoSbUzb+slgdeBGci8xY2
-# yQDuTnb5k2SnmYGh/plQJaAPuB9Z+jJPvZ6ThQxGTqkuCHFzB2yfeI54SxIIn3lk
-# R0Hi8O0SW6iBWnVyia6GqKctC5movgaDIq6QDx6GTQ==
+# KwYBBAGCNwIBFTAvBgkqhkiG9w0BCQQxIgQgGQu6Cl/lV+Xwh0x9ppIqkoV938fv
+# Zr9a5onUYx9e27YwDQYJKoZIhvcNAQEBBQAEggIAf4fF7Mlfm+U0eFN8q1FKr/ZX
+# Uc2IC+Kbl0YsZ/fJnacXWSJwOCJZdQO3fnXwbV9CRu2Jxo0f4BeWHA75upaKWaYS
+# X8QpBAR+ENnWS38jlMYnLpHFtnrzByZFcNtpWm5SOpq+dc5OvJG8SlXvX3nvb/Yd
+# Jb6TWdgADRYfJBffVBno0SmMEAL/N0WqUEOgdK58UxROoKQoZp9rFSIyAqseQP5d
+# pKtIY6cdNL3XAxeWftzU+zM1iPhneBH6MixQCP7tqKENruVlx6QdzGioIEog1Y6R
+# L3yNfcx9SE2mZmIgFAtOJ/SUoCaSet6CIxXqA0iEiKnjW+pozKyWsvXOj5UCOPcK
+# HWBhXoQJbbSIBw8WlysdGheBhkvJMtnbvAerdGxBfHnNIjj39jC1qU93mZ/fHLXs
+# LAosI/pBP1WvtO7RXWskGeTdpLY8pvZWp1CpnjAINR2k0uV+mHd6xITELbfhZmjM
+# y2UH1GY4q3nHFtBQZJqRdXndXVAYYYXmiGret8nBfAfyb9w5GU3g2DRVy5XUyipw
+# d60Zu+Sgz8gxzGu7B5pCgBy32dtfeR7229xsP8tfbB7rhqmnu/66sG3hwowNx87H
+# syY9dkd4s+N/8R0cLb83UFUvjBfs7FTmwim3O1llozhGyqXwh6Z86ZLqkj5nNm6M
+# OuqfDfL+i+oitN/MGHahghjOMIIYygYKKwYBBAGCNwMDATGCGLowghi2BgkqhkiG
+# 9w0BBwKgghinMIIYowIBAzEPMA0GCWCGSAFlAwQCAgUAMIH0BgsqhkiG9w0BCRAB
+# BKCB5ASB4TCB3gIBAQYKKwYBBAGyMQIBATAxMA0GCWCGSAFlAwQCAQUABCAwvFOP
+# G/kRPyfbCG38oPsOz20fa6FE1rTumiWSw+ijZAIVAOTyHajGmPUL7Bf/b5Rk+JKT
+# fMaYGA8yMDI0MDgxNTA2MDQxM1qgcqRwMG4xCzAJBgNVBAYTAkdCMRMwEQYDVQQI
+# EwpNYW5jaGVzdGVyMRgwFgYDVQQKEw9TZWN0aWdvIExpbWl0ZWQxMDAuBgNVBAMT
+# J1NlY3RpZ28gUHVibGljIFRpbWUgU3RhbXBpbmcgU2lnbmVyIFIzNaCCEv8wggZd
+# MIIExaADAgECAhA6UmoshM5V5h1l/MwS2OmJMA0GCSqGSIb3DQEBDAUAMFUxCzAJ
+# BgNVBAYTAkdCMRgwFgYDVQQKEw9TZWN0aWdvIExpbWl0ZWQxLDAqBgNVBAMTI1Nl
+# Y3RpZ28gUHVibGljIFRpbWUgU3RhbXBpbmcgQ0EgUjM2MB4XDTI0MDExNTAwMDAw
+# MFoXDTM1MDQxNDIzNTk1OVowbjELMAkGA1UEBhMCR0IxEzARBgNVBAgTCk1hbmNo
+# ZXN0ZXIxGDAWBgNVBAoTD1NlY3RpZ28gTGltaXRlZDEwMC4GA1UEAxMnU2VjdGln
+# byBQdWJsaWMgVGltZSBTdGFtcGluZyBTaWduZXIgUjM1MIICIjANBgkqhkiG9w0B
+# AQEFAAOCAg8AMIICCgKCAgEAjdFn9MFIm739OEk6TWGBm8PY3EWlYQQ2jQae45iW
+# gPXUGVuYoIa1xjTGIyuw3suUSBzKiyG0/c/Yn++d5mG6IyayljuGT9DeXQU9k8GW
+# Wj2/BPoamg2fFctnPsdTYhMGxM06z1+Ft0Bav8ybww21ii/faiy+NhiUM195+cFq
+# OtCpJXxZ/lm9tpjmVmEqpAlRpfGmLhNdkqiEuDFTuD1GsV3jvuPuPGKUJTam3P53
+# U4LM0UCxeDI8Qz40Qw9TPar6S02XExlc8X1YsiE6ETcTz+g1ImQ1OqFwEaxsMj/W
+# oJT18GG5KiNnS7n/X4iMwboAg3IjpcvEzw4AZCZowHyCzYhnFRM4PuNMVHYcTXGg
+# vuq9I7j4ke281x4e7/90Z5Wbk92RrLcS35hO30TABcGx3Q8+YLRy6o0k1w4jRefC
+# MT7b5mTxtq5XPmKvtgfPuaWPkGZ/tbxInyNDA7YgOgccULjp4+D56g2iuzRCsLQ9
+# ac6AN4yRbqCYsG2rcIQ5INTyI2JzA2w1vsAHPRbUTeqVLDuNOY2gYIoKBWQsPYVo
+# yzaoBVU6O5TG+a1YyfWkgVVS9nXKs8hVti3VpOV3aeuaHnjgC6He2CCDL9aW6gte
+# Ue0AmC8XCtWwpePx6QW3ROZo8vSUe9AR7mMdu5+FzTmW8K13Bt8GX/YBFJO7LWzw
+# KAUCAwEAAaOCAY4wggGKMB8GA1UdIwQYMBaAFF9Y7UwxeqJhQo1SgLqzYZcZojKb
+# MB0GA1UdDgQWBBRo76QySWm2Ujgd6kM5LPQUap4MhTAOBgNVHQ8BAf8EBAMCBsAw
+# DAYDVR0TAQH/BAIwADAWBgNVHSUBAf8EDDAKBggrBgEFBQcDCDBKBgNVHSAEQzBB
+# MDUGDCsGAQQBsjEBAgEDCDAlMCMGCCsGAQUFBwIBFhdodHRwczovL3NlY3RpZ28u
+# Y29tL0NQUzAIBgZngQwBBAIwSgYDVR0fBEMwQTA/oD2gO4Y5aHR0cDovL2NybC5z
+# ZWN0aWdvLmNvbS9TZWN0aWdvUHVibGljVGltZVN0YW1waW5nQ0FSMzYuY3JsMHoG
+# CCsGAQUFBwEBBG4wbDBFBggrBgEFBQcwAoY5aHR0cDovL2NydC5zZWN0aWdvLmNv
+# bS9TZWN0aWdvUHVibGljVGltZVN0YW1waW5nQ0FSMzYuY3J0MCMGCCsGAQUFBzAB
+# hhdodHRwOi8vb2NzcC5zZWN0aWdvLmNvbTANBgkqhkiG9w0BAQwFAAOCAYEAsNwu
+# yfpPNkyKL/bJT9XvGE8fnw7Gv/4SetmOkjK9hPPa7/Nsv5/MHuVus+aXwRFqM5Vu
+# 51qfrHTwnVExcP2EHKr7IR+m/Ub7PamaeWfle5x8D0x/MsysICs00xtSNVxFywCv
+# Xx55l6Wg3lXiPCui8N4s51mXS0Ht85fkXo3auZdo1O4lHzJLYX4RZovlVWD5EfwV
+# 6Ve1G9UMslnm6pI0hyR0Zr95QWG0MpNPP0u05SHjq/YkPlDee3yYOECNMqnZ+j8o
+# noUtZ0oC8CkbOOk/AOoV4kp/6Ql2gEp3bNC7DOTlaCmH24DjpVgryn8FMklqEoK4
+# Z3IoUgV8R9qQLg1dr6/BjghGnj2XNA8ujta2JyoxpqpvyETZCYIUjIs69YiDjzft
+# t37rQVwIZsfCYv+DU5sh/StFL1x4rgNj2t8GccUfa/V3iFFW9lfIJWWsvtlC5XOO
+# OQswr1UmVdNWQem4LwrlLgcdO/YAnHqY52QwnBLiAuUnuBeshWmfEb5oieIYMIIG
+# FDCCA/ygAwIBAgIQeiOu2lNplg+RyD5c9MfjPzANBgkqhkiG9w0BAQwFADBXMQsw
+# CQYDVQQGEwJHQjEYMBYGA1UEChMPU2VjdGlnbyBMaW1pdGVkMS4wLAYDVQQDEyVT
+# ZWN0aWdvIFB1YmxpYyBUaW1lIFN0YW1waW5nIFJvb3QgUjQ2MB4XDTIxMDMyMjAw
+# MDAwMFoXDTM2MDMyMTIzNTk1OVowVTELMAkGA1UEBhMCR0IxGDAWBgNVBAoTD1Nl
+# Y3RpZ28gTGltaXRlZDEsMCoGA1UEAxMjU2VjdGlnbyBQdWJsaWMgVGltZSBTdGFt
+# cGluZyBDQSBSMzYwggGiMA0GCSqGSIb3DQEBAQUAA4IBjwAwggGKAoIBgQDNmNhD
+# Qatugivs9jN+JjTkiYzT7yISgFQ+7yavjA6Bg+OiIjPm/N/t3nC7wYUrUlY3mFyI
+# 32t2o6Ft3EtxJXCc5MmZQZ8AxCbh5c6WzeJDB9qkQVa46xiYEpc81KnBkAWgsaXn
+# LURoYZzksHIzzCNxtIXnb9njZholGw9djnjkTdAA83abEOHQ4ujOGIaBhPXG2NdV
+# 8TNgFWZ9BojlAvflxNMCOwkCnzlH4oCw5+4v1nssWeN1y4+RlaOywwRMUi54fr2v
+# FsU5QPrgb6tSjvEUh1EC4M29YGy/SIYM8ZpHadmVjbi3Pl8hJiTWw9jiCKv31pcA
+# aeijS9fc6R7DgyyLIGflmdQMwrNRxCulVq8ZpysiSYNi79tw5RHWZUEhnRfs/hsp
+# /fwkXsynu1jcsUX+HuG8FLa2BNheUPtOcgw+vHJcJ8HnJCrcUWhdFczf8O+pDiyG
+# hVYX+bDDP3GhGS7TmKmGnbZ9N+MpEhWmbiAVPbgkqykSkzyYVr15OApZYK8CAwEA
+# AaOCAVwwggFYMB8GA1UdIwQYMBaAFPZ3at0//QET/xahbIICL9AKPRQlMB0GA1Ud
+# DgQWBBRfWO1MMXqiYUKNUoC6s2GXGaIymzAOBgNVHQ8BAf8EBAMCAYYwEgYDVR0T
+# AQH/BAgwBgEB/wIBADATBgNVHSUEDDAKBggrBgEFBQcDCDARBgNVHSAECjAIMAYG
+# BFUdIAAwTAYDVR0fBEUwQzBBoD+gPYY7aHR0cDovL2NybC5zZWN0aWdvLmNvbS9T
+# ZWN0aWdvUHVibGljVGltZVN0YW1waW5nUm9vdFI0Ni5jcmwwfAYIKwYBBQUHAQEE
+# cDBuMEcGCCsGAQUFBzAChjtodHRwOi8vY3J0LnNlY3RpZ28uY29tL1NlY3RpZ29Q
+# dWJsaWNUaW1lU3RhbXBpbmdSb290UjQ2LnA3YzAjBggrBgEFBQcwAYYXaHR0cDov
+# L29jc3Auc2VjdGlnby5jb20wDQYJKoZIhvcNAQEMBQADggIBABLXeyCtDjVYDJ6B
+# HSVY/UwtZ3Svx2ImIfZVVGnGoUaGdltoX4hDskBMZx5NY5L6SCcwDMZhHOmbyMhy
+# OVJDwm1yrKYqGDHWzpwVkFJ+996jKKAXyIIaUf5JVKjccev3w16mNIUlNTkpJEor
+# 7edVJZiRJVCAmWAaHcw9zP0hY3gj+fWp8MbOocI9Zn78xvm9XKGBp6rEs9sEiq/p
+# wzvg2/KjXE2yWUQIkms6+yslCRqNXPjEnBnxuUB1fm6bPAV+Tsr/Qrd+mOCJemo0
+# 6ldon4pJFbQd0TQVIMLv5koklInHvyaf6vATJP4DfPtKzSBPkKlOtyaFTAjD2Nu+
+# di5hErEVVaMqSVbfPzd6kNXOhYm23EWm6N2s2ZHCHVhlUgHaC4ACMRCgXjYfQEDt
+# YEK54dUwPJXV7icz0rgCzs9VI29DwsjVZFpO4ZIVR33LwXyPDbYFkLqYmgHjR3tK
+# Vkhh9qKV2WCmBuC27pIOx6TYvyqiYbntinmpOqh/QPAnhDgexKG9GX/n1PggkGi9
+# HCapZp8fRwg8RftwS21Ln61euBG0yONM6noD2XQPrFwpm3GcuqJMf0o8LLrFkSLR
+# QNwxPDDkWXhW+gZswbaiie5fd/W2ygcto78XCSPfFWveUOSZ5SqK95tBO8aTHmEa
+# 4lpJVD7HrTEn9jb1EGvxOb1cnn0CMIIGgjCCBGqgAwIBAgIQNsKwvXwbOuejs902
+# y8l1aDANBgkqhkiG9w0BAQwFADCBiDELMAkGA1UEBhMCVVMxEzARBgNVBAgTCk5l
+# dyBKZXJzZXkxFDASBgNVBAcTC0plcnNleSBDaXR5MR4wHAYDVQQKExVUaGUgVVNF
+# UlRSVVNUIE5ldHdvcmsxLjAsBgNVBAMTJVVTRVJUcnVzdCBSU0EgQ2VydGlmaWNh
+# dGlvbiBBdXRob3JpdHkwHhcNMjEwMzIyMDAwMDAwWhcNMzgwMTE4MjM1OTU5WjBX
+# MQswCQYDVQQGEwJHQjEYMBYGA1UEChMPU2VjdGlnbyBMaW1pdGVkMS4wLAYDVQQD
+# EyVTZWN0aWdvIFB1YmxpYyBUaW1lIFN0YW1waW5nIFJvb3QgUjQ2MIICIjANBgkq
+# hkiG9w0BAQEFAAOCAg8AMIICCgKCAgEAiJ3YuUVnnR3d6LkmgZpUVMB8SQWbzFoV
+# D9mUEES0QUCBdxSZqdTkdizICFNeINCSJS+lV1ipnW5ihkQyC0cRLWXUJzodqpnM
+# Rs46npiJPHrfLBOifjfhpdXJ2aHHsPHggGsCi7uE0awqKggE/LkYw3sqaBia67h/
+# 3awoqNvGqiFRJ+OTWYmUCO2GAXsePHi+/JUNAax3kpqstbl3vcTdOGhtKShvZIvj
+# wulRH87rbukNyHGWX5tNK/WABKf+Gnoi4cmisS7oSimgHUI0Wn/4elNd40BFdSZ1
+# EwpuddZ+Wr7+Dfo0lcHflm/FDDrOJ3rWqauUP8hsokDoI7D/yUVI9DAE/WK3Jl3C
+# 4LKwIpn1mNzMyptRwsXKrop06m7NUNHdlTDEMovXAIDGAvYynPt5lutv8lZeI5w3
+# MOlCybAZDpK3Dy1MKo+6aEtE9vtiTMzz/o2dYfdP0KWZwZIXbYsTIlg1YIetCpi5
+# s14qiXOpRsKqFKqav9R1R5vj3NgevsAsvxsAnI8Oa5s2oy25qhsoBIGo/zi6GpxF
+# j+mOdh35Xn91y72J4RGOJEoqzEIbW3q0b2iPuWLA911cRxgY5SJYubvjay3nSMbB
+# PPFsyl6mY4/WYucmyS9lo3l7jk27MAe145GWxK4O3m3gEFEIkv7kRmefDR7Oe2T1
+# HxAnICQvr9sCAwEAAaOCARYwggESMB8GA1UdIwQYMBaAFFN5v1qqK0rPVIDh2JvA
+# nfKyA2bLMB0GA1UdDgQWBBT2d2rdP/0BE/8WoWyCAi/QCj0UJTAOBgNVHQ8BAf8E
+# BAMCAYYwDwYDVR0TAQH/BAUwAwEB/zATBgNVHSUEDDAKBggrBgEFBQcDCDARBgNV
+# HSAECjAIMAYGBFUdIAAwUAYDVR0fBEkwRzBFoEOgQYY/aHR0cDovL2NybC51c2Vy
+# dHJ1c3QuY29tL1VTRVJUcnVzdFJTQUNlcnRpZmljYXRpb25BdXRob3JpdHkuY3Js
+# MDUGCCsGAQUFBwEBBCkwJzAlBggrBgEFBQcwAYYZaHR0cDovL29jc3AudXNlcnRy
+# dXN0LmNvbTANBgkqhkiG9w0BAQwFAAOCAgEADr5lQe1oRLjlocXUEYfktzsljOt+
+# 2sgXke3Y8UPEooU5y39rAARaAdAxUeiX1ktLJ3+lgxtoLQhn5cFb3GF2SSZRX8pt
+# Q6IvuD3wz/LNHKpQ5nX8hjsDLRhsyeIiJsms9yAWnvdYOdEMq1W61KE9JlBkB20X
+# Bee6JaXx4UBErc+YuoSb1SxVf7nkNtUjPfcxuFtrQdRMRi/fInV/AobE8Gw/8yBM
+# QKKaHt5eia8ybT8Y/Ffa6HAJyz9gvEOcF1VWXG8OMeM7Vy7Bs6mSIkYeYtddU1ux
+# 1dQLbEGur18ut97wgGwDiGinCwKPyFO7ApcmVJOtlw9FVJxw/mL1TbyBns4zOgka
+# XFnnfzg4qbSvnrwyj1NiurMp4pmAWjR+Pb/SIduPnmFzbSN/G8reZCL4fvGlvPFk
+# 4Uab/JVCSmj59+/mB2Gn6G/UYOy8k60mKcmaAZsEVkhOFuoj4we8CYyaR9vd9PGZ
+# KSinaZIkvVjbH/3nlLb0a7SBIkiRzfPfS9T+JesylbHa1LtRV9U/7m0q7Ma2CQ/t
+# 392ioOssXW7oKLdOmMBl14suVFBmbzrt5V5cQPnwtd3UOTpS9oCG+ZZheiIvPgkD
+# mA8FzPsnfXW5qHELB43ET7HHFHeRPRYrMBKjkb8/IN7Po0d0hQoF4TeMM+zYAJzo
+# KQnVKOLg8pZVPT8xggSRMIIEjQIBATBpMFUxCzAJBgNVBAYTAkdCMRgwFgYDVQQK
+# Ew9TZWN0aWdvIExpbWl0ZWQxLDAqBgNVBAMTI1NlY3RpZ28gUHVibGljIFRpbWUg
+# U3RhbXBpbmcgQ0EgUjM2AhA6UmoshM5V5h1l/MwS2OmJMA0GCWCGSAFlAwQCAgUA
+# oIIB+TAaBgkqhkiG9w0BCQMxDQYLKoZIhvcNAQkQAQQwHAYJKoZIhvcNAQkFMQ8X
+# DTI0MDgxNTA2MDQxM1owPwYJKoZIhvcNAQkEMTIEMJT8dqI00G0ruRZ2KbJBalak
+# Ykhw4xi33udcdGqxeiLSLmdF9T0cYceQumw5nlzjyzCCAXoGCyqGSIb3DQEJEAIM
+# MYIBaTCCAWUwggFhMBYEFPhgmBmm+4gs9+hSl/KhGVIaFndfMIGHBBTGrlTkeIbx
+# fD1VEkiMacNKevnC3TBvMFukWTBXMQswCQYDVQQGEwJHQjEYMBYGA1UEChMPU2Vj
+# dGlnbyBMaW1pdGVkMS4wLAYDVQQDEyVTZWN0aWdvIFB1YmxpYyBUaW1lIFN0YW1w
+# aW5nIFJvb3QgUjQ2AhB6I67aU2mWD5HIPlz0x+M/MIG8BBSFPWMtk4KCYXzQkDXE
+# kd6SwULaxzCBozCBjqSBizCBiDELMAkGA1UEBhMCVVMxEzARBgNVBAgTCk5ldyBK
+# ZXJzZXkxFDASBgNVBAcTC0plcnNleSBDaXR5MR4wHAYDVQQKExVUaGUgVVNFUlRS
+# VVNUIE5ldHdvcmsxLjAsBgNVBAMTJVVTRVJUcnVzdCBSU0EgQ2VydGlmaWNhdGlv
+# biBBdXRob3JpdHkCEDbCsL18Gzrno7PdNsvJdWgwDQYJKoZIhvcNAQEBBQAEggIA
+# ZuWNxbobjCpAZ6lNpkysnCdHsBkGNnP6w19GaqV88yU6sYbhA5CU+apCMZ5V2y+K
+# kaZf8H28gJDmUX+FvVOiJNh8OsR7oaPwWs/bl4Mx8Rq+Qyth4MfeAQ+iLj2ZH6Hx
+# Z5g4uNryTnp9ZXJ3FjjHb0xUTwt5FlKAAmPlHT8ehbHySud2Gl2d1PfpQ1RpbxrY
+# 39++AR3EsCedPKCCkhNjfLrmR4XZmxJA2Ee9vGmKvICViTDrAAyZxDlfsnXClpiP
+# eoYprbJy5nYYZddVI+7lULCBsKnnCCpsA5X2BIzuOzso/uE0DTx94qatTj3SvIb6
+# 2T/vV3oD4K23QIapWpdWsuivTcmw6wCvPYAQLv1xbWNyTTuSAoEa+2EaOjzoB0Fn
+# cEeayDrbFmbh5xzdJ3vecj3LRYGCVGPHyJ1Qp93vxLoDUDX61JBMuGPmaRJ9ozsk
+# 21uhMvxJSGRtKEvq5RTHTYzF1qcJlJnQypkgXiFzhdhzV3LV0G9ISt2m3cXXf2Nr
+# xVn6oqzpx/+7z79Dqn/nhD2r3ZuVYVV0qQCXRtOcopVukgG2EyYj5h9tTkW9sf9n
+# EL9Vz3749580YXWJjNhZTpV7T5FNGfvtXM4LkEp0uoRXcc2vsCQ2hRPz54A0cMsW
+# NgduD/dpopcbs+rGBz/TUNLdi+ls8iBmbXtvDm2Jqm4=
 # SIG # End signature block
