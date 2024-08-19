@@ -5,7 +5,7 @@
 	 Created by:   	Michael Morten Sonne
 	 Organization: 	Sonne´s Cloud
 	 Filename:     	"Clear-MDISensorInstallation.ps1"
-	 Version:		1.0
+	 Version:		1.1
 	===========================================================================
 	.DESCRIPTION
         This script will remove the Microsoft Defender for Identity sensor installation from the host.
@@ -34,6 +34,7 @@
 
     .CHANGELOG
         1.0 - 15-08-2024 - Initial version of the script
+        1.1 - 19-08-2024 - Added check for if ADCS or ADFS is installed before uninstalling NPCAP - if installed, then skip the NPCAP part and updated Uninstall-NPCAP function
 #>
 
 param (
@@ -43,6 +44,7 @@ param (
 # Define the regex pattern for GUID validation
 $REGEX_GUID = '(?<guid>[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12})'
 
+#------------------------------------------------------[Functions]------------------------------------------------------
 # Function to validate that the path is not a root key
 function IsValidRegistryPath {
     param (
@@ -157,35 +159,40 @@ function Stop-NamedPipes {
 }
 
 function Disable-Services {
+    param (
+        [string]$aatpsensorName,
+        [string]$aatpsensorUpdaterName
+    )
+
     # Disable the services:
-    Write-Host "Disabling services..."
+    Write-Host "Disabling services '$aatpsensorName' and '$aatpsensorUpdaterName'..."
     try {
         # Check if the services exist before disabling them
-        $aatpsensorService = Get-Service -Name aatpsensor -ErrorAction SilentlyContinue
-        $aatpsensorUpdaterService = Get-Service -Name aatpsensorupdater -ErrorAction SilentlyContinue
+        $aatpsensorService = Get-Service -Name $aatpsensorName -ErrorAction SilentlyContinue
+        $aatpsensorUpdaterService = Get-Service -Name $aatpsensorUpdaterName -ErrorAction SilentlyContinue
 
         # If the services exist, disable them
         if ($aatpsensorService -and $aatpsensorUpdaterService) {
-            Set-Service -Name aatpsensor -StartupType Disabled
-            Set-Service -Name aatpsensorupdater -StartupType Disabled
-        }       
-        
+            Set-Service -Name $aatpsensorName -StartupType Disabled
+            Set-Service -Name $aatpsensorUpdaterName -StartupType Disabled
+        }
+
         # Check if the services are disabled
-        $aatpsensorService = Get-Service -Name aatpsensor -ErrorAction SilentlyContinue
-        $aatpsensorUpdaterService = Get-Service -Name aatpsensorupdater -ErrorAction SilentlyContinue
+        $aatpsensorService = Get-Service -Name $aatpsensorName -ErrorAction SilentlyContinue
+        $aatpsensorUpdaterService = Get-Service -Name $aatpsensorUpdaterName -ErrorAction SilentlyContinue
 
         if ($null -eq $aatpsensorService -and $null -eq $aatpsensorUpdaterService) {
             Write-Host "Both services not found." -ForegroundColor Green
         } elseif ($null -eq $aatpsensorService) {
-            Write-Host "aatpsensor service not found."
+            Write-Host "'$aatpsensorName' service not found."
         } elseif ($null -eq $aatpsensorUpdaterService) {
-            Write-Host "aatpsensorupdater service not found."
+            Write-Host "'$aatpsensorUpdaterName' service not found."
         } elseif ($aatpsensorService.StartType -eq 'Disabled' -and $aatpsensorUpdaterService.StartType -eq 'Disabled') {
             Write-Host "Both services disabled successfully." -ForegroundColor Green
         } elseif ($aatpsensorService.StartType -eq 'Disabled') {
-            Write-Host "aatpsensor service disabled successfully, but failed to disable aatpsensorupdater service." -ForegroundColor Yellow
+            Write-Host "'$aatpsensorName' service disabled successfully, but failed to disable '$aatpsensorUpdaterName' service." -ForegroundColor Yellow
         } elseif ($aatpsensorUpdaterService.StartType -eq 'Disabled') {
-            Write-Host "aatpsensorupdater service disabled successfully, but failed to disable aatpsensor service." -ForegroundColor Yellow
+            Write-Host "'$aatpsensorUpdaterName' service disabled successfully, but failed to disable '$aatpsensorName' service." -ForegroundColor Yellow
         } else {
             Write-Host "Failed to disable services - Error: $_" -ForegroundColor Red
         }
@@ -196,35 +203,40 @@ function Disable-Services {
 }
 
 function Stop-Services{
+    param (
+        [string]$aatpsensorName,
+        [string]$aatpsensorUpdaterName
+    )
+
     # Stop the services:
-    Write-Host "Stopping services..."
+    Write-Host "Stopping services '$aatpsensorName' and '$aatpsensorUpdaterName'..."
     try {
         # Check if the services exist before stopping them
-        $aatpsensorService = Get-Service -Name aatpsensor -ErrorAction SilentlyContinue
-        $aatpsensorUpdaterService = Get-Service -Name aatpsensorupdater -ErrorAction SilentlyContinue
+        $aatpsensorService = Get-Service -Name $aatpsensorName -ErrorAction SilentlyContinue
+        $aatpsensorUpdaterService = Get-Service -Name $aatpsensorUpdaterName -ErrorAction SilentlyContinue
 
         # If the services exist, stop them
         if ($aatpsensorService -and $aatpsensorUpdaterService) {
-            Stop-Service -Name aatpsensorupdater -Force
-            Stop-Service -Name aatpsensor -Force
+            Stop-Service -Name $aatpsensorUpdaterName -Force
+            Stop-Service -Name $aatpsensorName -Force
         }
         
         # Check if the services are stopped
-        $aatpsensorService = Get-Service -Name aatpsensor -ErrorAction SilentlyContinue
-        $aatpsensorUpdaterService = Get-Service -Name aatpsensorupdater -ErrorAction SilentlyContinue
+        $aatpsensorService = Get-Service -Name $aatpsensorName -ErrorAction SilentlyContinue
+        $aatpsensorUpdaterService = Get-Service -Name $aatpsensorUpdaterName -ErrorAction SilentlyContinue
 
         if ($null -eq $aatpsensorService -and $null -eq $aatpsensorUpdaterService) {
             Write-Host "Both services not found so cant stop them." -ForegroundColor Green
         } elseif ($null -eq $aatpsensorService) {
-            Write-Host "aatpsensor service not found."
+            Write-Host "$aatpsensorName service not found."
         } elseif ($null -eq $aatpsensorUpdaterService) {
-            Write-Host "aatpsensorupdater service not found."
+            Write-Host "$aatpsensorUpdaterName service not found."
         } elseif ($aatpsensorService.Status -eq 'Stopped' -and $aatpsensorUpdaterService.Status -eq 'Stopped') {
             Write-Host "Both services stopped successfully." -ForegroundColor Green
         } elseif ($aatpsensorService.Status -eq 'Stopped') {
-            Write-Host "aatpsensor service stopped successfully, but failed to stop aatpsensorupdater service." -ForegroundColor Yellow
+            Write-Host "$aatpsensorName service stopped successfully, but failed to stop $aatpsensorUpdaterName service." -ForegroundColor Yellow
         } elseif ($aatpsensorUpdaterService.Status -eq 'Stopped') {
-            Write-Host "aatpsensorupdater service stopped successfully, but failed to stop aatpsensor service." -ForegroundColor Yellow
+            Write-Host "$aatpsensorUpdaterName service stopped successfully, but failed to stop $aatpsensorName service." -ForegroundColor Yellow
         } else {
             Write-Host "Failed to stop services - Error: $_" -ForegroundColor Red
         }
@@ -236,23 +248,28 @@ function Stop-Services{
 
 function Remove-Services
 {
+    param (
+        [string]$aatpsensorName,
+        [string]$aatpsensorUpdaterName
+    )
+
     # Remove the services:
-    Write-Host "Removing services..."
+    Write-Host "Removing services '$aatpsensorName' and '$aatpsensorUpdaterName'..."
     try {
-        C:\Windows\System32\sc.exe delete aatpsensorupdater | Out-Null
-        C:\Windows\System32\sc.exe delete aatpsensor | Out-Null
+        C:\Windows\System32\sc.exe delete $aatpsensorUpdaterName | Out-Null
+        C:\Windows\System32\sc.exe delete $aatpsensorName | Out-Null
         
         # Check if the services are removed
-        $aatpsensorService = Get-Service -Name aatpsensor -ErrorAction SilentlyContinue
-        $aatpsensorUpdaterService = Get-Service -Name aatpsensorupdater -ErrorAction SilentlyContinue
+        $aatpsensorService = Get-Service -Name $aatpsensorName -ErrorAction SilentlyContinue
+        $aatpsensorUpdaterService = Get-Service -Name $aatpsensorUpdaterName -ErrorAction SilentlyContinue
 
         # Check if the services are removed successfully or not
         if ($null -eq $aatpsensorService -and $null -eq $aatpsensorUpdaterService) {
             Write-Host "Both services removed successfully." -ForegroundColor Green
         } elseif ($null -eq $aatpsensorService) {
-            Write-Host "aatpsensor service removed successfully, but aatpsensorupdater service still exists." -ForegroundColor Yellow
+            Write-Host "'$aatpsensorName' service removed successfully, but '$aatpsensorUpdaterName' service still exists." -ForegroundColor Yellow
         } elseif ($null -eq $aatpsensorUpdaterService) {
-            Write-Host "aatpsensorupdater service removed successfully, but aatpsensor service still exists." -ForegroundColor Yellow
+            Write-Host "'$aatpsensorUpdaterName' service removed successfully, but '$aatpsensorName' service still exists." -ForegroundColor Yellow
         } else {
             Write-Host "Failed to remove services - Error: $_" -ForegroundColor Red
         }
@@ -263,14 +280,17 @@ function Remove-Services
 }
 
 function Stop-Processes{
-    # Stop processes if they are running:
-    Write-Host "Stopping processes..."
-
     # Define the processes to stop
     $processesToStop = @(
         'Microsoft.Tri.Sensor.exe',
         'Microsoft.Tri.Sensor.Updater.exe'
     )
+
+    # Format the process names with single quotes
+    $formattedProcesses = $processesToStop | ForEach-Object { "'$_'" }
+
+    # Stop processes if they are running:
+    Write-Host "Stopping processes $formattedProcesses..."
 
     # Loop through each process and attempt to stop it
     foreach ($process in $processesToStop) {
@@ -278,13 +298,13 @@ function Stop-Processes{
         if ($runningProcess) {
             try {
                 Stop-Process -Name $process -Force -ErrorAction SilentlyContinue
-                Write-Host "Stopped process: $process" -ForegroundColor Green
+                Write-Host "Stopped process: '$process'" -ForegroundColor Green
             }
             catch {
-                Write-Host "Failed to stop process: $process - Error: $_" -ForegroundColor Red
+                Write-Host "Failed to stop process: '$process' - Error: $_" -ForegroundColor Red
             }
         } else {
-            Write-Host "Process not running: $process - skipping!" -ForegroundColor Yellow
+            Write-Host "Process not running: '$process' - skipping!" -ForegroundColor Yellow
         }
     }
 
@@ -304,52 +324,61 @@ function Uninstall-NPCAP {
     $npcapUninstallPath = "C:\Program Files\Npcap\Uninstall.exe"
 
     # Check if the NPCAP installation exists
-    if (Test-Path -Path $npcapUninstallPath) {
-        try {
-            # Uninstall NPCAP silently
-            Write-Host "Uninstalling NPCAP..."
-            Start-Process -FilePath $npcapUninstallPath -ArgumentList "/S" -Wait
-            Write-Host "NPCAP uninstalled process ended successfully - will check if ininstalled..." -ForegroundColor Green
-
-            # Check if the NPCAP installation is removed
-            if (Test-Path -Path $npcapUninstallPath) {
-                Write-Host "Failed to uninstall NPCAP - Uninstall.exe still exists!" -ForegroundColor Red
-            } else {
-                Write-Host "NPCAP uninstalled successfully." -ForegroundColor Green
-
-                # Delete the NPCAP folder
-                try {
-                    Remove-Item -Path "C:\Program Files\Npcap" -Force -Recurse
-                    Write-Host "Removed NPCAP folder." -ForegroundColor Green
-                }
-                catch {
-                    Write-Host "Failed to remove NPCAP folder - Error: $_" -ForegroundColor Red
-                }
-            }
-        }
-        catch {
-            # Display an error message if the NPCAP uninstallation fails
-            Write-Host "Failed to uninstall NPCAP - Error: $_" -ForegroundColor Red
-        }
-    } else {
+    if (-not (Test-Path -Path $npcapUninstallPath)) {
         # Display a message if NPCAP is not installed
         Write-Host "NPCAP is not installed." -ForegroundColor Yellow
+        return
+    }
+
+    try {
+        # Uninstall NPCAP silently
+        Write-Host "NPCAP found - uninstalling NPCAP..." -ForegroundColor Yellow
+
+        # Start the NPCAP uninstallation process
+        Start-Process -FilePath $npcapUninstallPath -ArgumentList "/S" -Wait
+
+        # Display a message if the NPCAP uninstallation process ends successfully
+        Write-Host "NPCAP uninstalled process ended successfully - will check if uninstalled..." -ForegroundColor Green
+
+        # Check if the NPCAP installation is removed
+        if (Test-Path -Path $npcapUninstallPath) {
+            Write-Host "Failed to uninstall NPCAP - Uninstall.exe still exists!" -ForegroundColor Red
+        } else {
+            Write-Host "NPCAP uninstalled successfully." -ForegroundColor Green
+
+            # Delete the NPCAP folder
+            try {
+                Remove-Item -Path "C:\Program Files\Npcap" -Force -Recurse
+                Write-Host "Removed NPCAP folder." -ForegroundColor Green
+            }
+            catch {
+                Write-Host "Failed to remove NPCAP folder - Error: $_" -ForegroundColor Red
+            }
+        }
+    }
+    catch {
+        # Display an error message if the NPCAP uninstallation fails
+        Write-Host "Failed to uninstall NPCAP - Error: $_" -ForegroundColor Red
     }
 }
 
 function Clear-MDISensorInstallation {
+    # Define the service names
+    $aatpsensorName = 'aatpsensor'
+    $aatpsensorUpdaterName = 'aatpsensorupdater'
+
     # Get the PID of the services (needed for later use)
-    $aatpsensorPID = Get-WmiObject -Class Win32_Service | Where-Object { $_.Name -eq 'aatpsensor' } | Select-Object -ExpandProperty ProcessId
-    $aatpsensorUpdaterPID = Get-WmiObject -Class Win32_Service | Where-Object { $_.Name -eq 'aatpsensorupdater' } | Select-Object -ExpandProperty ProcessId
+    $aatpsensorPID = Get-WmiObject -Class Win32_Service | Where-Object { $_.Name -eq $aatpsensorName } | Select-Object -ExpandProperty ProcessId
+    $aatpsensorUpdaterPID = Get-WmiObject -Class Win32_Service | Where-Object { $_.Name -eq $aatpsensorUpdaterName } | Select-Object -ExpandProperty ProcessId
 
     # Call the functions to disable the services
-    Disable-Services
+    Disable-Services -aatpsensorName $aatpsensorName -aatpsensorUpdaterName $aatpsensorUpdaterName
 
     # Call the functions to stop the services
-    Stop-Services
+    Stop-Services -aatpsensorName $aatpsensorName -aatpsensorUpdaterName $aatpsensorUpdaterName
 
     # Call the functions to remove the services
-    Remove-Services
+    Remove-Services -aatpsensorName $aatpsensorName -aatpsensorUpdaterName $aatpsensorUpdaterName
 
     # Call the function to stop the processes
     Stop-Processes
@@ -357,11 +386,21 @@ function Clear-MDISensorInstallation {
     # Call the function to remove the running named pipes
     Stop-NamedPipes -aatpsensorPID $aatpsensorPID -aatpsensorUpdaterPID $aatpsensorUpdaterPID
 
-    # Call the function to uninstall NPCAP
-    Uninstall-NPCAP
+    # If ADCS or ADFS is installed, then skip the NPCAP part
+    if ((Get-WindowsFeature -Name ADCS-Cert-Authority).Installed -or (Get-WindowsFeature -Name ADFS-Federation).Installed) {
+        # ADCS or ADFS is installed - skip the NPCAP uninstallation
+        Write-Host "ADCS or ADFS is installed - skipping NPCAP uninstallation." -ForegroundColor Yellow
+    } else {
+        # ADCS or ADFS is not installed - proceed with NPCAP uninstallation
+        Write-Host "ADCS or ADFS is not installed - proceeding with NPCAP uninstallation..." -ForegroundColor Yellow
+
+        # Call the function to uninstall NPCAP
+        Uninstall-NPCAP
+    }
 
     # Find GUID´s and remove folders:
     Write-Host "Finding GUID´s..."
+
     $foldersToRemove = @('C:\Program Files\Azure Advanced Threat Protection Sensor')
     $folder1Path = (Get-ChildItem -Path 'C:\ProgramData\Package Cache\*\Microsoft.Tri.Sensor.Deployment.Package.msi').Directory.FullName
     if ($folder1Path -match $REGEX_GUID) {
@@ -424,11 +463,6 @@ function Clear-MDISensorInstallation {
     } else {
         Write-Host "GUID3 for Windows Installer database not found." -ForegroundColor Yellow
     }
-    <#
-    if ($foundGuid -match $REGEX_GUID) {
-        $guid3 = $Matches['guid']
-    }
-    #>
 
     # Find the GUID in the specified registry path and save it as guid4
     $componentPath = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Installer\UserData\S-1-5-18\Components"
@@ -788,34 +822,42 @@ function Clear-MDISensorInstallation {
     Write-Host ""
 }
 
+function Show-RiskWarningBanner {
+    # Define the warning messages with new lines before and after
+    $warningMessages = @(
+        "",
+        "WARNING: Removing the Microsoft Defender for Identity sensor manually can have serious consequences.",
+        "Accept the risk before proceeding!",
+        ""
+    )
+
+    # Calculate the length of the banner based on the longest line
+    $bannerLength = ($warningMessages | Measure-Object -Maximum Length).Maximum + 4
+    $bannerBorder = "*" * $bannerLength
+
+    # Create the banner
+    $banner = $bannerBorder + "`n"
+    foreach ($message in $warningMessages) {
+        $paddedMessage = "* " + $message.PadRight($bannerLength - 3) + " *"
+        $banner += $paddedMessage + "`n"
+    }
+    $banner += $bannerBorder
+
+    # Display the banner
+    Write-Host ""
+    Write-Host $banner -ForegroundColor Red
+    Write-Host ""
+}
+
+#------------------------------------------------------[Functions]------------------------------------------------------
+
+#---------------------------------------------------------[Main]--------------------------------------------------------
+
 # Run the script as an administrator/check if the script is running as an administrator
 Invoke-AsAdministrator
 
-# Display a risk warning banner
-# Define the warning messages with new lines before and after
-$warningMessages = @(
-    "",
-    "WARNING: Removing the Microsoft Defender for Identity sensor manually can have serious consequences.",
-    "Accept the risk before proceeding!",
-    ""
-)
-
-# Calculate the length of the banner based on the longest line
-$bannerLength = ($warningMessages | Measure-Object -Maximum Length).Maximum + 4
-$bannerBorder = "*" * $bannerLength + "*"
-
-# Create the banner
-$banner = $bannerBorder + "`n"
-foreach ($message in $warningMessages) {
-    $paddedMessage = "* " + $message.PadRight($bannerLength - 3) + " *"
-    $banner += $paddedMessage + "`n"
-}
-$banner += $bannerBorder
-
-# Display the banner
-Write-Host ""
-Write-Host $banner -ForegroundColor Red
-Write-Host ""
+# Call the function to display the banner
+Show-RiskWarningBanner
 
 # Show beta warning message
 Write-Host "This script is in beta and may not work as expected. Use at your own risk!`n" -ForegroundColor Yellow
@@ -835,11 +877,14 @@ if ($confirm -eq "Y") {
 } else {
     Write-Host "`nSensor installation not removed - not confirmed by user" -ForegroundColor Yellow
 }
+
+#---------------------------------------------------------[Main]--------------------------------------------------------
+
 # SIG # Begin signature block
 # MIIubAYJKoZIhvcNAQcCoIIuXTCCLlkCAQExDzANBglghkgBZQMEAgEFADB5Bgor
 # BgEEAYI3AgEEoGswaTA0BgorBgEEAYI3AgEeMCYCAwEAAAQQH8w7YFlLCE63JNLG
-# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCC2s+QkVdYP9sxS
-# 1xxqHAmj7jts1Rpj1SifN3SZa38Zz6CCEd8wggVvMIIEV6ADAgECAhBI/JO0YFWU
+# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCDmTrHeyN4Eb2Cu
+# Co8tO0ab28c7qgqrUBEL9mEibCWmoqCCEd8wggVvMIIEV6ADAgECAhBI/JO0YFWU
 # jTanyYqJ1pQWMA0GCSqGSIb3DQEBDAUAMHsxCzAJBgNVBAYTAkdCMRswGQYDVQQI
 # DBJHcmVhdGVyIE1hbmNoZXN0ZXIxEDAOBgNVBAcMB1NhbGZvcmQxGjAYBgNVBAoM
 # EUNvbW9kbyBDQSBMaW1pdGVkMSEwHwYDVQQDDBhBQUEgQ2VydGlmaWNhdGUgU2Vy
@@ -939,23 +984,23 @@ if ($confirm -eq "Y") {
 # KzApBgNVBAMTIlNlY3RpZ28gUHVibGljIENvZGUgU2lnbmluZyBDQSBSMzYCEBHh
 # oIZkh66CYIKNKPBResYwDQYJYIZIAWUDBAIBBQCgfDAQBgorBgEEAYI3AgEMMQIw
 # ADAZBgkqhkiG9w0BCQMxDAYKKwYBBAGCNwIBBDAcBgorBgEEAYI3AgELMQ4wDAYK
-# KwYBBAGCNwIBFTAvBgkqhkiG9w0BCQQxIgQgCUavGG9CnX97g5aIVN+ijqvxDr7N
-# HUiU22WxBBQ+rHQwDQYJKoZIhvcNAQEBBQAEggIAoXWBTftz+U3SJrV85+np/v2x
-# W/N0vF/qiD0DYNnTW2Gc8Kl2L5ThoFhqYUQaw/sVoViT/rj9STx9xf+xLJGPLIzD
-# 5xN9LtPDR+7WRvSYgBbocYwM6ZMTEBgWXZBAdtcr+QX0af1F/fwkXNQvXWjx0ffn
-# JG1kj2LXUoRb23TIucLp3cfmYFVh1B/q7WluROc2NimlFJDrvyM9xL/piiQ+juSk
-# vm6uchGiyuIj6fb71JJkNfKAu8AD2L2ie0/K/Nl1BgZ5VwsNEdN+YYkeFkN4j9M9
-# RB1O9KfH6bI+ENCiKxu6nA1Ou2AjH5Ny7Iau3uSS3Tmi9FX2ink37Ish2RwFYf+3
-# jrEowZGin84ykEPfTeRsBdTnkmffhXXT923B61RrPNnqEhnNqMHxB3cCLEvewmgY
-# RubvcqvIOfXlMfNqqLPnfBt2FjM4vncdJwTBizty0SP1qtsHiDiJTNoGAtPDUBZv
-# 3VTmbreKGxYG4mA5v+5+w9TTbQF1pJRjRui4kjEJjamw3UVx9IXg5OpFI24bEowm
-# KhVKl1ZF0e57oluK1jO1/HYLF4TpJzHeEAzykC1OaqOhOQhgtCvt+zj7xU08NBOe
-# 2hUD/R5xZanBjheginH0xpp5UJUnLBCvsgMYPjnAtlFD9PG+Zbi5Nx+LHpEwSNh+
-# CudzvRWJnOHZZW14pSqhghjOMIIYygYKKwYBBAGCNwMDATGCGLowghi2BgkqhkiG
+# KwYBBAGCNwIBFTAvBgkqhkiG9w0BCQQxIgQgfJco4rN5xEtAg7Z8ynwjfwK2Z2l3
+# jZxF60Zb+AhI1IwwDQYJKoZIhvcNAQEBBQAEggIAE4wyDOlBZ6JWf4tw7hI/j5H8
+# wUcRdDfMI5oZF5LaXL9pU9FW7SY3OHkdyp6jGcuHXEgfK9ES265SUFfLn0YHY0F4
+# eIEqhDH7pzTNbZ1YZkszFT/pJLBIPEzK+fSiTCPk3wJoscEw7UsFvb80z75rbCNY
+# C0g5r4rt6QKSY7NYvWdJ2Y8FlR/ED54VN3fLxhNs85b6OcmxXqOpaQE82dlC04/q
+# tlpGil/lRMyqfolToyuEiyhsj0dfqhFzAJcCc/RpKLVinCt4ZMdUqS4k3WC+ViUL
+# k/3skQ55Rf8Ah+VGlLeSQpMJY/erXwNOnfwDWcPvmskY66XFCKBWSG69OyRzuhE5
+# EeKzM5MPfIUZIvXGEF9eudgCKpc9KRsRQqzblMB7MZPcJH93waw1hPeB115yUk8M
+# qZ8p+n/tsKDP4SxK1RLMJegaVdHJ0kKvCcJyFe7nfSA3twBAkZhZeVXB+YV5YeHz
+# MjRmROwq0pns+ybiiR/Vl4pvf0iE+Lc+pGqrzxPsf8cwgYRoUq1jH3acSJMzPFfk
+# lC4NVXMj6pdrx7vfXzzmKM3XlLIK/hzeKiS1W30jqFt2PvDsMeoBE8SNtpd7Zync
+# a12JjHlF93Kv9Y+ZabsPMSPXmL/+NrH8KBjvKtlBtZik0fjyIQ6q206cfdPXVKO/
+# Vs0y3VGR/sHtDqUA1TuhghjOMIIYygYKKwYBBAGCNwMDATGCGLowghi2BgkqhkiG
 # 9w0BBwKgghinMIIYowIBAzEPMA0GCWCGSAFlAwQCAgUAMIH0BgsqhkiG9w0BCRAB
-# BKCB5ASB4TCB3gIBAQYKKwYBBAGyMQIBATAxMA0GCWCGSAFlAwQCAQUABCBgY6co
-# EUWmJ3wIUBNBdDPNynyJKcwjdtg6YVP+wOuOnAIVANudb9mTXqnLg4YTEWyGgSoY
-# K3MYGA8yMDI0MDgxNTE5MjAyMFqgcqRwMG4xCzAJBgNVBAYTAkdCMRMwEQYDVQQI
+# BKCB5ASB4TCB3gIBAQYKKwYBBAGyMQIBATAxMA0GCWCGSAFlAwQCAQUABCAa56Sz
+# /AnV6RLBAlaVB13k6yIoVBnnnGrp0or/6Mjl/gIVALE1l498J3xlcMkhnBPfaAYb
+# BEcgGA8yMDI0MDgxOTIwMzI0M1qgcqRwMG4xCzAJBgNVBAYTAkdCMRMwEQYDVQQI
 # EwpNYW5jaGVzdGVyMRgwFgYDVQQKEw9TZWN0aWdvIExpbWl0ZWQxMDAuBgNVBAMT
 # J1NlY3RpZ28gUHVibGljIFRpbWUgU3RhbXBpbmcgU2lnbmVyIFIzNaCCEv8wggZd
 # MIIExaADAgECAhA6UmoshM5V5h1l/MwS2OmJMA0GCSqGSIb3DQEBDAUAMFUxCzAJ
@@ -1063,8 +1108,8 @@ if ($confirm -eq "Y") {
 # Ew9TZWN0aWdvIExpbWl0ZWQxLDAqBgNVBAMTI1NlY3RpZ28gUHVibGljIFRpbWUg
 # U3RhbXBpbmcgQ0EgUjM2AhA6UmoshM5V5h1l/MwS2OmJMA0GCWCGSAFlAwQCAgUA
 # oIIB+TAaBgkqhkiG9w0BCQMxDQYLKoZIhvcNAQkQAQQwHAYJKoZIhvcNAQkFMQ8X
-# DTI0MDgxNTE5MjAyMFowPwYJKoZIhvcNAQkEMTIEMD+MRcW6wtKEEjK6gO6E8C7Z
-# Umy5KLwG6wqKas40YfuB7/nXtwRpc2nJ7uNUQ+MASDCCAXoGCyqGSIb3DQEJEAIM
+# DTI0MDgxOTIwMzI0M1owPwYJKoZIhvcNAQkEMTIEMCiFYLEsw12mLHzSttg6ePdK
+# hQuKxnodHUyueOp8mHaGpFfde915wi7G4NLudzI9AjCCAXoGCyqGSIb3DQEJEAIM
 # MYIBaTCCAWUwggFhMBYEFPhgmBmm+4gs9+hSl/KhGVIaFndfMIGHBBTGrlTkeIbx
 # fD1VEkiMacNKevnC3TBvMFukWTBXMQswCQYDVQQGEwJHQjEYMBYGA1UEChMPU2Vj
 # dGlnbyBMaW1pdGVkMS4wLAYDVQQDEyVTZWN0aWdvIFB1YmxpYyBUaW1lIFN0YW1w
@@ -1073,15 +1118,15 @@ if ($confirm -eq "Y") {
 # ZXJzZXkxFDASBgNVBAcTC0plcnNleSBDaXR5MR4wHAYDVQQKExVUaGUgVVNFUlRS
 # VVNUIE5ldHdvcmsxLjAsBgNVBAMTJVVTRVJUcnVzdCBSU0EgQ2VydGlmaWNhdGlv
 # biBBdXRob3JpdHkCEDbCsL18Gzrno7PdNsvJdWgwDQYJKoZIhvcNAQEBBQAEggIA
-# Vxn290SRFVC8xGOg2H3RrcUMtqk2RsW5jhLmLuTdofh5gjyFxPvUjIiC9fpLuxGp
-# eIXGKJm3GZGlB9RCkqJp8VajbKvAcdgX7p16p0RanaxDs8LIy3a1dpjl/1UDW7Os
-# lWHRM4+omfuH6g/4061CZKvUKTEjmlBzDfg9vuFhn+hkOr2M57aBmRHLB5Atyz/H
-# VvIVTpXQmF9cNhnfNcQ38VvfGxg5iLwqceMv7XKeSiYFYF4OUmBZj3V1EhIE5CXa
-# wHh2bDdcAOHDrEkrW9n5wTaDd0SN0s9ctB0rSMTllPjwvZF9BfxeI1aHlZFprcus
-# FbL2QUIxKyqJ/k1dpbXYG5sMrWa6lZSJAIlJCfIkR2vDCrc/YjzSnJ1dEa0CI4UO
-# rcnPxygFSxqsc4K7dv+N+SEGKGGAPLvBtzcADshJ4AUtoqvtSLtr6O0bWeFksdiZ
-# qFeu3kVIPE4MvkAriy+LAziN0jo4bRYqgD500/F9Rdm6VbXqC2o0t4K/a9V7uuA8
-# UdR1UYA/HjF5QWernyJZbVIXprBsN5bE1fctWzZ1hryPCzKlgcKDrM1NrBZ/DFs2
-# 53Ye6IWc+URXsAGmVv5kSoXbyQkx1B44ucTTzDRXB92mdT2PTBZk/N+xTDE1m8NG
-# gGe6NNOf9xeVL8h8DQJby+PWeeV4cepa+eMiPqvntNU=
+# Nb93mfx/pYLTKMn+jEm6QFaGgNoTmAJcsOa9DRgVCGbxZxOTn/AvLk+cQrtjcWlP
+# ovgCDbT+PiiSraWikRO5BJgwx8pgFXIb7FZTFP99KaSpSIRhHTmN/CSa6tdSdEw5
+# rYyJt7GvOJYcvxR/tKpHdDFiN4JjH3x1TM+TloyrE3kNjtjKALCBgGgUPqI31d+4
+# w7BetpvTVP5XjD1IACUT6gvUlV/YxklNank15W3ym8C4DE7oeMUxuqB2Phkxgb3A
+# nEv2Wpg+UAgJrjja/7zvb1Z3FN65t+bK0xnVUvoLtq4zi418SyP7+0WL4CPcEKnl
+# 5DZNMdb9L7IAh7xlapDfmyw+aoA3n8dwODik0hS9JCimIPdnPOuImWqx6eMjFrta
+# grnWgM3qa+vTpXZmSV09xMXcz5i5SfBTdeVNXRDUDk/mhMApcFCLN+gBfV2Egffl
+# LbfkqKTE2ifP2IvPml+pMn3dGUnXtc+N0Sq4w6ZMG7R0doM+ZvvlLn1p7kFC9UOw
+# 1mp0onrdsyIiWgxCzL/WCcYFAjju7FoVgzNacKQ0Nu5o9aUZcT8eeURWHOyJaeKq
+# w7pz7LVVN2oa4dBTXwyC+R9IqLoxJhMe8JMjtoRdU4aGjDE5BJhWitu6S3C2snlw
+# mlljBEWt6fpiAtiJtf9PXrFLIPOO4oQnq6/WtiQPcD8=
 # SIG # End signature block
