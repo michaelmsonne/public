@@ -1,5 +1,5 @@
 # Public Scripts Repository
-Repository of scripts and so on from my blog <a href="https://blog.sonnes.cloud/" target="_blank">https://blog.sonnes.cloud/</a>, and these are linked from individual blog posts over here.
+Repository of scripts and so on from my blog <a href="https://blog.sonnes.cloud/" target="_blank">https://blog.sonnes.cloud/</a> and these are linked from individual blog posts over here if that is the case.
 
 Some scripts is also here **just to be public** - and not showed on my blog etc.
 
