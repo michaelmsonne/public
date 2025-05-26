@@ -34,5 +34,6 @@ The script will display warnings and require confirmation before making any chan
 
 ## Important Notes
 **Irreversible Action:** This script will permanently remove the MDI sensor and all related components from the host.
-Manual Portal Cleanup: After running the script, remove the sensor entry from the Microsoft Defender for Identity portal:
+
+**Manual Portal Cleanup:** After running the script, remove the sensor entry from the Microsoft Defender for Identity portal:
 https://security.microsoft.com/securitysettings/identities?tabid=sensor
