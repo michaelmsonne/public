@@ -19,7 +19,7 @@
 1. **Run PowerShell as Administrator:**
    - Right-click PowerShell and select "Run as administrator".
 
-2. **Set Execution Policy (if required):**
+2. **Set Execution Policy (if required, but the script is Code Signed):**
    ```powershell
    Set-ExecutionPolicy RemoteSigned
 3. Navigate to the Script Directory:
