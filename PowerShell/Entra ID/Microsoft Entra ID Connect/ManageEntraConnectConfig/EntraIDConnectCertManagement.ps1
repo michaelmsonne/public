@@ -27,7 +27,9 @@
 
 function Show-Menu {
     Write-Host ""
-    Write-Host "Entra ID Connect - Certificate-based Authentication Management" -ForegroundColor Cyan
+    Write-Host "================================================" -ForegroundColor DarkCyan
+    Write-Host " Entra ID Connect - Certificate Management Menu " -ForegroundColor Cyan
+    Write-Host "================================================" -ForegroundColor DarkCyan
     Write-Host ""
     Write-Host "1. Create and assign certificate for service account"
     Write-Host "2. Register application with certificate"
@@ -38,44 +40,63 @@ function Show-Menu {
     Write-Host ""
 }
 
-function CreateAndAssignCertificate {
+function Add-NewCertAndAssignCertificate {
     Write-Host "Creating and assigning a certificate for the Entra ID Connect service account..." -ForegroundColor Yellow
+    $dns = $null
+    $domainFound = $false
     try {
         $dns = ([System.DirectoryServices.ActiveDirectory.Domain]::GetCurrentDomain()).Name
+        $domainFound = $true
         Write-Host "Using current domain name found: $dns"
     } catch {
         Write-Host "Unable to automatically detect the domain name."
+    }
+
+    if ($domainFound -and $dns) {
+        $useDomain = Read-Host "Use detected domain name '$dns'? (Y to accept, N to enter a custom DNS name)"
+        if ($useDomain -ne 'Y' -and $useDomain -ne 'y') {
+            $dns = Read-Host "Please enter the certificate DNS name (e.g., sub.domain.com)"
+        }
+    } else {
         $dns = Read-Host "Please enter the certificate DNS name (e.g., sub.domain.com)"
     }
+
+    if ([string]::IsNullOrWhiteSpace($dns)) {
+        Write-Host "No DNS name provided. Skipping certificate creation." -ForegroundColor Yellow
+        return
+    }
+
     Write-Host "Generating a new self-signed certificate for: $dns"
     Write-Host "The certificate will be placed in the LocalMachine\My store and set as non-exportable for security."
     Write-Host "The certificate will be valid for 1 year and use SHA256 with a 2048-bit RSA key." -ForegroundColor Yellow
     
-    $params = @{
-        DnsName = $dns
-        CertStoreLocation = "Cert:\LocalMachine\My"
-        KeyAlgorithm = "RSA"
-        KeyLength = 2048
-        HashAlgorithm = "SHA256"
-        NotAfter = (Get-Date).AddYears(1)
-        KeyExportPolicy = "NonExportable"
-    }
-    $cert = New-SelfSignedCertificate @params
-
-    if ($null -eq $cert) {
-        Write-Host "Failed to create the certificate." -ForegroundColor Red
+    try {
+        $params = @{
+            DnsName = $dns
+            CertStoreLocation = "Cert:\LocalMachine\My"
+            KeyAlgorithm = "RSA"
+            KeyLength = 2048
+            HashAlgorithm = "SHA256"
+            NotAfter = (Get-Date).AddYears(1)
+            KeyExportPolicy = "NonExportable"
+        }
+        $cert = New-SelfSignedCertificate @params
+    } catch {
+        Write-Host "Failed to create self-signed certificate: $_" -ForegroundColor Red
         return
     }
 
     # Display certificate details
     Write-Host "Certificate created successfully." -ForegroundColor Green
     Write-Host "Certificate details:"
-    Write-Host "Subject: $($cert.Subject)"
-    Write-Host "Thumbprint: $($cert.Thumbprint)"
-    Write-Host "Not Before: $($cert.NotBefore)"
-    Write-Host "Not After: $($cert.NotAfter)"
-    Write-Host "SHA256 Hash: $([BitConverter]::ToString($cert.GetCertHash('SHA256')) -replace '-', '')"
+    Write-Host " Subject: $($cert.Subject)"
+    Write-Host " Thumbprint: $($cert.Thumbprint)"
+    Write-Host " Not Before: $($cert.NotBefore)"
+    Write-Host " Not After: $($cert.NotAfter)"
+    Write-Host " SHA256 Hash: $([BitConverter]::ToString($cert.GetCertHash('SHA256')) -replace '-', '')"
+    Write-Host ""
     Write-Host "Certificate will be used for Entra ID Connect service account authentication."
+    Write-Host ""
 
     # Confirm to proceed with assigning permissions
     $confirm = Read-Host "Do you want to assign read permissions to the Entra ID Connect service account for this certificate? (Y/N)"
@@ -87,27 +108,32 @@ function CreateAndAssignCertificate {
     Write-Host "Assigning read permissions to the Entra ID Connect service account so it can access the certificate's private key..."
 
     try {
+        # Ensure the certificate has a private key
         $rsaCert = [System.Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPrivateKey($cert)
         if ($null -eq $rsaCert) {
             Write-Host "Failed to retrieve the RSA private key from the certificate." -ForegroundColor Red
             return
         }
+        # Get the unique name of the private key file
         $keyName = $rsaCert.key.UniqueName
         if ([string]::IsNullOrWhiteSpace($keyName)) {
             Write-Host "Failed to determine the private key file name." -ForegroundColor Red
             return
         }
+        # Construct the path to the private key file
         $path = "$env:ALLUSERSPROFILE\Microsoft\Crypto\Keys\$keyName"
         if (-not (Test-Path -Path $path)) {
             Write-Host "Private key file not found at: $path" -ForegroundColor Red
             return
         }
+        # Get the current ACL for the private key file
         try {
             $permissions = Get-Acl -Path $path
         } catch {
             Write-Host "Failed to get ACL for private key file: $_" -ForegroundColor Red
             return
         }
+        # Retrieve the Entra ID Connect service account name
         try {
             $serviceAccount = (Get-ItemProperty -Path HKLM:\SYSTEM\CurrentControlSet\Services\ADSync -Name ObjectName).ObjectName
         } catch {
@@ -116,6 +142,16 @@ function CreateAndAssignCertificate {
         }
         if ([string]::IsNullOrWhiteSpace($serviceAccount)) {
             Write-Host "Service account name is empty or not found." -ForegroundColor Red
+            return
+        }
+        # Create a new FileSystemAccessRule to grant read permissions
+        Write-Host "Assigning read permissions to the service account: $serviceAccount" -ForegroundColor Yellow
+        if (-not $permissions) {
+            Write-Host "No permissions found for the private key file. Creating new ACL." -ForegroundColor Yellow
+            $permissions = New-Object Security.AccessControl.FileSecurity
+        }
+        if ($permissions.Access | Where-Object { $_.IdentityReference -eq $serviceAccount -and $_.FileSystemRights -eq "Read" }) {
+            Write-Host "Service account already has read permissions." -ForegroundColor Yellow
             return
         }
         try {
@@ -178,7 +214,7 @@ function Get-Certificates {
     } while ($true)
 }
 
-function Register-Application-With-Certificate {
+function Register-ApplicationWithCertificate {
     try {
         $sha256 = Get-Certificates
         if ($null -eq $sha256) { Write-Host "Operation cancelled."; return }
@@ -221,7 +257,7 @@ function Test-ConnectorCredential {
     }
 }
 
-function RotateCertificate {
+function Add-NewCertificateAndChange {
     $dns = Read-Host "Enter certificate DNS name"
     Set-ADSyncScheduler -SyncCycleEnabled $false
     $params = @{
@@ -264,11 +300,11 @@ do {
     Show-Menu
     $choice = Read-Host "Select an option (1-6)"
     switch ($choice) {
-        "1" { CreateAndAssignCertificate }
-        "2" { Register-Application-With-Certificate }
+        "1" { Add-NewCertAndAssignCertificate }
+        "2" { Register-ApplicationWithCertificate }
         "3" { Set-CertificateToADConnect }
         "4" { Test-ConnectorCredential }
-        "5" { RotateCertificate }
+        "5" { Add-NewCertificateAndChange }
         "6" { Write-Host "Exiting..."; exit }
         default { Write-Host "Invalid selection. Try again." -ForegroundColor Red }
     }
