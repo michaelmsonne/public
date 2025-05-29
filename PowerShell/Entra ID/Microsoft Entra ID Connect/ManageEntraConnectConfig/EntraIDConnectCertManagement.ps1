@@ -77,7 +77,6 @@ function CreateAndAssignCertificate {
     Write-Host "SHA256 Hash: $([BitConverter]::ToString($cert.GetCertHash('SHA256')) -replace '-', '')"
     Write-Host "Certificate will be used for Entra ID Connect service account authentication."
 
-
     # Confirm to proceed with assigning permissions
     $confirm = Read-Host "Do you want to assign read permissions to the Entra ID Connect service account for this certificate? (Y/N)"
     if ($confirm -ne 'Y' -and $confirm -ne 'y') {
