@@ -19,6 +19,7 @@
 
     .CHANGELOG
         28-05-2025 - Michael Morten Sonne - Initial release
+        29-05-2025 - Michael Morten Sonne - Added error handling and improved user prompts
 
 	.EXAMPLE
         Get the Value of a Setting: .\EntraIDConnectCertManagement.ps1
@@ -241,9 +242,23 @@ function RotateCertificate {
     $rule = New-Object Security.Accesscontrol.FileSystemAccessRule "$serviceAccount", "read", "allow"
     $permissions.AddAccessRule($rule)
     Set-Acl -Path $path -AclObject $permissions
-    Invoke-ADSyncApplicationCredentialRotation -CertificateSHA256Hash $cert.Thumbprint
+
+    $errorOccurred = $false
+    try {
+        Invoke-ADSyncApplicationCredentialRotation -CertificateSHA256Hash $cert.Thumbprint
+    } catch {
+        $errorOccurred = $true
+        Write-Host "An error occurred during certificate rotation:" -ForegroundColor Red
+        Write-Host $_.Exception.Message -ForegroundColor Red
+        if ($_.Exception.InnerException) {
+            Write-Host $_.Exception.InnerException.Message -ForegroundColor Red
+        }
+    }
     Set-ADSyncScheduler -SyncCycleEnabled $true
-    Write-Host "Certificate rotated and scheduler re-enabled." -ForegroundColor Green
+
+    if (-not $errorOccurred) {
+        Write-Host "Certificate rotated and scheduler re-enabled." -ForegroundColor Green
+    }
 }
 
 do {
