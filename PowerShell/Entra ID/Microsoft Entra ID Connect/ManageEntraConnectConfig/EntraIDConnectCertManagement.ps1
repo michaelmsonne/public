@@ -36,7 +36,9 @@ function Show-Menu {
     Write-Host "3. Assign certificate to Entra ID Connect"
     Write-Host "4. Verify connector credential"
     Write-Host "5. Rotate (rollover) certificate"
-    Write-Host "6. Exit"
+    Write-Host "6. Show current connector config"
+    Write-Host ""
+    Write-Host "0. Exit"
     Write-Host ""
 }
 
@@ -213,7 +215,6 @@ function Get-Certificates {
         }
     } while ($true)
 }
-
 function Register-ApplicationWithCertificate {
     try {
         $sha256 = Get-Certificates
@@ -296,16 +297,93 @@ function Add-NewCertificateAndChange {
     }
 }
 
+function Get-ConnectorName {
+    # Look for connectors matching the pattern
+    $connectors = Get-ADSyncConnector | Where-Object { $_.Name -imatch "onmicrosoft\.com - AAD$" }
+    if ($connectors.Count -eq 0) {
+        Write-Host "No connectors found matching '*onmicrosoft.com - AAD'" -ForegroundColor Red
+        $manual = Read-Host "Do you want to manually enter a connector name? (Y/N)"
+        if ($manual -match '^(Y|y)$') {
+            return Read-Host "Enter the full connector name"
+        } else {
+            return $null
+        }
+    } elseif ($connectors.Count -eq 1) {
+        return $connectors[0].Name
+    } else {
+        Write-Host "Multiple connectors found:" -ForegroundColor Yellow
+        $i = 1
+        foreach ($c in $connectors) {
+            Write-Host "$i : $($c.Name)"
+            $i++
+        }
+        $selection = Read-Host "Select the connector number or type 'M' to manually enter a connector name"
+        if ($selection -match "^\d+$" -and $selection -ge 1 -and $selection -le $connectors.Count) {
+            return $connectors[$selection - 1].Name
+        } elseif ($selection -ieq "M") {
+            return Read-Host "Enter the full connector name"
+        } else {
+            Write-Host "Invalid selection." -ForegroundColor Red
+            return $null
+        }
+    }
+}
+
+function Show-ConnectorParameters {
+    param(
+        [string]$ConnectorName
+    )
+    
+    # If no ConnectorName is provided, automatically find one.
+    if ([string]::IsNullOrWhiteSpace($ConnectorName)) {
+        Write-Host "No connector name provided. Searching automatically..." -ForegroundColor Yellow
+        $ConnectorName = Get-ConnectorName
+        if ([string]::IsNullOrWhiteSpace($ConnectorName)) {
+            Write-Host "Unable to automatically locate a connector." -ForegroundColor Red
+            # Ask user to manually enter
+            if ((Read-Host "Would you like to manually enter a connector name? (Y/N)") -match '^(Y|y)$') {
+                $ConnectorName = Read-Host "Enter the full connector name"
+            } else {
+                return
+            }
+        } else {
+            Write-Host "Using connector: $ConnectorName" -ForegroundColor Cyan
+        }
+    }
+    
+    $connector = Get-ADSyncConnector | Where-Object { $_.Name -eq $ConnectorName } | Select-Object -First 1
+    if (-not $connector) {
+        Write-Host "Connector '$ConnectorName' not found." -ForegroundColor Red
+        return
+    }
+    
+    Write-Host "Connector: $($connector.Name)" -ForegroundColor Cyan
+    $oldLimit = $FormatEnumerationLimit
+    $FormatEnumerationLimit = -1
+    # Capture table output into a string
+    $output = $connector.ConnectivityParameters | Format-Table Name, InputType, Value -Wrap -AutoSize | Out-String
+    # Replace multiple newlines with a single newline
+    $compressedOutput = $output -replace "(\r?\n\s*){2,}", "`n"
+    Write-Host $compressedOutput.TrimEnd()
+    $FormatEnumerationLimit = $oldLimit
+}
+
+function Show-CurrentConnectorConfig {
+    Write-Host "Retrieving current connector configuration..." -ForegroundColor Cyan
+    Show-ConnectorParameters -ConnectorName ""
+}
+
 do {
     Show-Menu
-    $choice = Read-Host "Select an option (1-6)"
+    $choice = Read-Host "Select an option (1-6) or 0 to exit"    
     switch ($choice) {
         "1" { Add-NewCertAndAssignCertificate }
         "2" { Register-ApplicationWithCertificate }
         "3" { Set-CertificateToADConnect }
         "4" { Test-ConnectorCredential }
         "5" { Add-NewCertificateAndChange }
-        "6" { Write-Host "Exiting..."; exit }
+        "6" { Show-CurrentConnectorConfig }
+        "0" { Write-Host "Exiting..."; exit }
         default { Write-Host "Invalid selection. Try again." -ForegroundColor Red }
     }
 } while ($true)
