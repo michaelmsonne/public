@@ -43,7 +43,7 @@ if (-not $adminRights) {
 }
 
 function Show-Menu {
-    Clear-Host
+    #Clear-Host
     Write-Host "********** Secure Boot Update Menu for UEFI CA 2023 **********" -ForegroundColor Cyan
     Write-Host "*** Certificate Expiration: June 2026 - Update Required ***" -ForegroundColor Red
     Write-Host ""
@@ -55,48 +55,106 @@ function Show-Menu {
     Write-Host "Prerequisites & Setup:"
     Write-Host "4. Set up prerequisites for update"
     Write-Host "5. Export detailed report"
+    Write-Host "6. Show Secure Boot scheduled tasks"
     Write-Host ""
     Write-Host "Update Process:"
-    Write-Host "6. Set registry key for certificate update"
-    Write-Host "7. Run scheduled task"
-    Write-Host "8. Reboot the machine"
-    Write-Host "9. Verify Secure Boot DB update"
+    Write-Host "7. Set registry key for certificate update"
+    Write-Host "8. Run scheduled task"
+    Write-Host "9. Reboot the machine"
+    Write-Host "10. Verify Secure Boot DB update"
     Write-Host ""
-    Write-Host "10. Exit"
+    Write-Host "11. Exit"
 }
 
 function RunScheduledTask {
-    $taskName = "\Microsoft\Windows\PI\Secure-Boot-Update"
+    # Split task path and name for proper PowerShell cmdlet usage
+    $taskPath = "\Microsoft\Windows\PI\"
+    $taskName = "Secure-Boot-Update"
+    $fullTaskName = "$taskPath$taskName"
+    
+    Write-Host "================================================================" -ForegroundColor Gray
+    Write-Host "RUNNING SECURE BOOT UPDATE TASK" -ForegroundColor Yellow
+    Write-Host "================================================================" -ForegroundColor Gray
     
     try {
-        # Check if the task exists
-        Get-ScheduledTask -TaskName $taskName -ErrorAction Stop | Out-Null
+        # Check if the task exists using separate path and name
+        Write-Host "Checking if task exists..." -ForegroundColor Cyan
+        Write-Host "  Task Path: $taskPath" -ForegroundColor Gray
+        Write-Host "  Task Name: $taskName" -ForegroundColor Gray
         
-        # Start the scheduled task
-        Start-ScheduledTask -TaskName $taskName
-        Write-Host "Scheduled task started. Waiting for it to complete..." -ForegroundColor Yellow
+        $task = Get-ScheduledTask -TaskPath $taskPath -TaskName $taskName -ErrorAction Stop
+        Write-Host "✓ Task found: $($task.TaskName)" -ForegroundColor Green
+        Write-Host "  Full Path: $($task.TaskPath)$($task.TaskName)" -ForegroundColor Gray
+        Write-Host "  Current State: $($task.State)" -ForegroundColor Gray
+        
+        # Check if task is already running
+        if ($task.State -eq 'Running') {
+            Write-Host "⚠ Task is already running. Waiting for it to complete..." -ForegroundColor Yellow
+        } else {
+            # Start the scheduled task using separate path and name
+            Write-Host "Starting scheduled task..." -ForegroundColor Cyan
+            Start-ScheduledTask -TaskPath $taskPath -TaskName $taskName
+            Write-Host "✓ Task started successfully" -ForegroundColor Green
+        }
+        
+        Write-Host "Monitoring task progress..." -ForegroundColor Yellow
+        $timeout = 300  # 5 minutes timeout
+        $elapsed = 0
         
         # Wait for the task to complete
         do {
-            Start-Sleep -Seconds 2
-            $taskState = (Get-ScheduledTask -TaskName $taskName).State
-            Write-Host "Task status: $taskState" -ForegroundColor Cyan
+            Start-Sleep -Seconds 3
+            $elapsed += 3
+            $currentTask = Get-ScheduledTask -TaskPath $taskPath -TaskName $taskName
+            $taskState = $currentTask.State
+            
+            # Show progress indicator
+            $dots = "." * (($elapsed / 3) % 4)
+            Write-Host "Task status: $taskState$dots (Elapsed: $elapsed seconds)" -ForegroundColor Cyan
+            
+            # Check for timeout
+            if ($elapsed -ge $timeout) {
+                Write-Host "⚠ Task timeout reached ($timeout seconds). Task may still be running." -ForegroundColor Yellow
+                break
+            }
+            
         } while ($taskState -ne 'Ready')
         
-        Write-Host "Scheduled task completed." -ForegroundColor Green
-        
-        # Check the last run result
-        $taskInfo = Get-ScheduledTaskInfo -TaskName $taskName
-        if ($taskInfo.LastTaskResult -eq 0) {
-            Write-Host "Task completed successfully (Result: $($taskInfo.LastTaskResult))" -ForegroundColor Green
-        } else {
-            Write-Host "Task completed with result code: $($taskInfo.LastTaskResult)" -ForegroundColor Yellow
+        if ($taskState -eq 'Ready') {
+            Write-Host "✓ Scheduled task completed." -ForegroundColor Green
+            
+            # Check the last run result using separate path and name
+            Write-Host "Checking task execution results..." -ForegroundColor Cyan
+            $taskInfo = Get-ScheduledTaskInfo -TaskPath $taskPath -TaskName $taskName
+            
+            Write-Host "Task Execution Details:" -ForegroundColor Yellow
+            Write-Host "  Last Run Time: $($taskInfo.LastRunTime)" -ForegroundColor Gray
+            Write-Host "  Last Result: $($taskInfo.LastTaskResult)" -ForegroundColor Gray
+            Write-Host "  Next Run Time: $($taskInfo.NextRunTime)" -ForegroundColor Gray
+            
+            if ($taskInfo.LastTaskResult -eq 0) {
+                Write-Host "✓ Task completed successfully (Result: $($taskInfo.LastTaskResult))" -ForegroundColor Green
+                Write-Host "✓ Secure Boot certificate update process completed" -ForegroundColor Green
+            } elseif ($taskInfo.LastTaskResult -eq 267011) {
+                Write-Host "⚠ Task completed with result: $($taskInfo.LastTaskResult) (Task was terminated)" -ForegroundColor Yellow
+            } else {
+                Write-Host "⚠ Task completed with result code: $($taskInfo.LastTaskResult)" -ForegroundColor Yellow
+                Write-Host "  This may indicate an issue with the certificate update process" -ForegroundColor Yellow
+            }
         }
         
+    } catch [Microsoft.PowerShell.Cmdletization.Cim.CimJobException] {
+        Write-Host "✗ Scheduled task not found: $fullTaskName" -ForegroundColor Red
+        Write-Host "This may be normal if:" -ForegroundColor Yellow
+        Write-Host "  - The system doesn't support Secure Boot certificate updates" -ForegroundColor Yellow
+        Write-Host "  - Windows updates haven't created the task yet" -ForegroundColor Yellow
+        Write-Host "  - The system is running an older version of Windows" -ForegroundColor Yellow
     } catch {
-        Write-Host "Error running scheduled task: $_" -ForegroundColor Red
+        Write-Host "✗ Error running scheduled task: $_" -ForegroundColor Red
         Write-Host "This may be normal if the task doesn't exist on this system or if Secure Boot updates are not available." -ForegroundColor Yellow
     }
+    
+    Write-Host "================================================================" -ForegroundColor Gray
 }
 
 function Get-SystemInfo {
@@ -120,7 +178,7 @@ function Get-SystemInfo {
 
 function Get-SecureBootStatus {
     $results = [PSCustomObject]@{
-        SecureBoot_Enabled             = $false
+        SecureBoot_Enabled            = $false
         MicrosoftUpdateManagedOptIn   = $false
         DiagnosticDataEnabled         = $false
         OS_Version                    = (Get-CimInstance Win32_OperatingSystem).Version
@@ -296,9 +354,9 @@ function Get-DetailedCertificateInfo {
             }
             
             # Check for updated KEK certificate
-            if ($kekString -match 'Microsoft Corporation KEK 2K CA 2023') {
+            if ($kekString -match 'Microsoft Corporation KEK CA 2023') {
                 $results.KEK_Updated_Found = $true
-                Write-Host "  ✓ Found: Microsoft Corporation KEK 2K CA 2023 (updated certificate)" -ForegroundColor Green
+                Write-Host "  ✓ Found: Microsoft Corporation KEK CA 2023 (updated certificate)" -ForegroundColor Green
             }
             
             $results.KEK_Status = if ($results.KEK_Updated_Found) { "Updated" } elseif ($results.KEK_Legacy_Found) { "Legacy - Update Required" } else { "Unknown" }
@@ -364,44 +422,44 @@ function Get-DetailedCertificateInfo {
         # Create detailed certificate information
         $results.CertificateDetails = @(
             [PSCustomObject]@{
-                Location = "KEK"
-                ExpirationDate = "June 2026"
                 ExpiringCertificate = "Microsoft Corporation KEK CA 2011"
-                UpdatedCertificate = "Microsoft Corporation KEK 2K CA 2023"
+                ExpirationDate = "June 2026"
+                NewCertificate = "Microsoft Corporation KEK CA 2023"
+                StoringLocation = "Stored in KEK"
                 Purpose = "Signs updates to DB and DBX"
                 LegacyFound = $results.KEK_Legacy_Found
                 UpdatedFound = $results.KEK_Updated_Found
                 Status = $results.KEK_Status
             },
             [PSCustomObject]@{
-                Location = "DB"
+                ExpiringCertificate = "Microsoft Windows Production PCA 2011"
+                ExpirationDate = "Oct 2026"
+                NewCertificate = "Windows UEFI CA 2023"
+                StoringLocation = "Stored in DB"
+                Purpose = "Used for signing the Windows boot loader"
+                LegacyFound = $results.DB_Windows_Legacy_Found
+                UpdatedFound = $results.DB_Windows_Updated_Found
+                Status = $results.DB_Windows_Status
+            },
+            [PSCustomObject]@{
+                ExpiringCertificate = "Microsoft UEFI CA 2011"
                 ExpirationDate = "June 2026"
-                ExpiringCertificate = "Microsoft Corporation UEFI CA 2011"
-                UpdatedCertificate = "Microsoft Corporation UEFI CA 2023"
-                Purpose = "Signs third-party OS and hardware driver components"
+                NewCertificate = "Microsoft UEFI CA 2023"
+                StoringLocation = "Stored in DB"
+                Purpose = "Signs third-party boot loaders and EFI applications"
                 LegacyFound = $results.DB_UEFI_Legacy_Found
                 UpdatedFound = $results.DB_UEFI_Updated_Found
                 Status = $results.DB_UEFI_Status
             },
             [PSCustomObject]@{
-                Location = "DB"
+                ExpiringCertificate = "Microsoft UEFI CA 2011"
                 ExpirationDate = "June 2026"
-                ExpiringCertificate = "Third-party UEFI CA"
-                UpdatedCertificate = "Microsoft Option ROM UEFI CA 2023"
+                NewCertificate = "Microsoft Option ROM UEFI CA 2023"
+                StoringLocation = "Stored in DB"
                 Purpose = "Signs third-party option ROMs"
-                LegacyFound = "N/A"
+                LegacyFound = $results.DB_UEFI_Legacy_Found
                 UpdatedFound = ($dbString -match 'Microsoft Option ROM UEFI CA 2023')
                 Status = if ($dbString -match 'Microsoft Option ROM UEFI CA 2023') { "Updated" } else { "Not Found" }
-            },
-            [PSCustomObject]@{
-                Location = "DB"
-                ExpirationDate = "October 2026"
-                ExpiringCertificate = "Microsoft Windows Production PCA 2011"
-                UpdatedCertificate = "Windows UEFI CA 2023"
-                Purpose = "Signs the Windows bootloader and boot components"
-                LegacyFound = $results.DB_Windows_Legacy_Found
-                UpdatedFound = $results.DB_Windows_Updated_Found
-                Status = $results.DB_Windows_Status
             }
         )
         
@@ -420,39 +478,108 @@ function Show-CertificateOverview {
     Write-Host "Based on Microsoft Tech Community guidance for certificate expiration" -ForegroundColor Gray
     Write-Host ""
     
-    # Display the certificate information in a more readable format
-    Write-Host "Certificate Expiration Timeline:" -ForegroundColor Yellow
+    # Get current certificate information
+    $certInfo = Get-DetailedCertificateInfo
+    
+    # Display comprehensive certificate information table
+    Write-Host "Certificate Update Summary:" -ForegroundColor Yellow
+    Write-Host "================================================================" -ForegroundColor Gray
+    Write-Host ""
+    
+    # Certificate data array matching your requested format
+    $certificateData = @(
+        [PSCustomObject]@{
+            ExpiringCertificate = "Microsoft Corporation KEK CA 2011"
+            ExpirationDate = "June 2026"
+            NewCertificate = "Microsoft Corporation KEK CA 2023"
+            StoringLocation = "Stored in KEK"
+            Purpose = "Signs updates to DB and DBX"
+            Status = $certInfo.KEK_Status
+        },
+        [PSCustomObject]@{
+            ExpiringCertificate = "Microsoft Windows Production PCA 2011"
+            ExpirationDate = "Oct 2026"
+            NewCertificate = "Windows UEFI CA 2023"
+            StoringLocation = "Stored in DB"
+            Purpose = "Used for signing the Windows boot loader"
+            Status = $certInfo.DB_Windows_Status
+        },
+        [PSCustomObject]@{
+            ExpiringCertificate = "Microsoft UEFI CA 2011"
+            ExpirationDate = "June 2026"
+            NewCertificate = "Microsoft UEFI CA 2023"
+            StoringLocation = "Stored in DB"
+            Purpose = "Signs third-party boot loaders and EFI applications"
+            Status = $certInfo.DB_UEFI_Status
+        },
+        [PSCustomObject]@{
+            ExpiringCertificate = "Microsoft UEFI CA 2011"
+            ExpirationDate = "June 2026"
+            NewCertificate = "Microsoft Option ROM UEFI CA 2023"
+            StoringLocation = "Stored in DB"
+            Purpose = "Signs third-party option ROMs"
+            Status = if ($certInfo.DB_String -match 'Microsoft Option ROM UEFI CA 2023') { "Updated" } else { "Not Found" }
+        }
+    )
+    
+    # Display table format
+    Write-Host "`nCertificate Overview Table:" -ForegroundColor Cyan
+    Write-Host ("=" * 170) -ForegroundColor Gray
+    
+    # Table header
+    $headerFormat = "{0,-40} {1,-15} {2,-40} {3,-15} {4,-50}"
+    Write-Host ($headerFormat -f "Expiring Certificate", "Expiration", "New Certificate", "Storing Location", "Purpose") -ForegroundColor Yellow
+    Write-Host ("=" * 170) -ForegroundColor Gray
+    
+    # Table rows
+    foreach ($cert in $certificateData) {
+        $expiringColor = "Red"
+        $newColor = if ($cert.Status -eq "Updated") { "Green" } else { "Yellow" }
+        $locationColor = "Cyan"
+        $purposeColor = "White"
+        
+        # Split the row to apply colors to each column
+        $parts = @(
+            $cert.ExpiringCertificate.PadRight(40),
+            $cert.ExpirationDate.PadRight(15),
+            $cert.NewCertificate.PadRight(40),
+            $cert.StoringLocation.PadRight(15),
+            $cert.Purpose.PadRight(50)
+        )
+        
+        Write-Host $parts[0] -ForegroundColor $expiringColor -NoNewline
+        Write-Host $parts[1] -ForegroundColor $expiringColor -NoNewline
+        Write-Host $parts[2] -ForegroundColor $newColor -NoNewline
+        Write-Host $parts[3] -ForegroundColor $locationColor -NoNewline
+        Write-Host $parts[4] -ForegroundColor $purposeColor
+    }
+    
+    Write-Host ("=" * 170) -ForegroundColor Gray
+    
+    # Display the certificate information in a structured format
+    Write-Host "`nDetailed Certificate Information:" -ForegroundColor Yellow
     Write-Host "================================================================" -ForegroundColor Gray
     
-    Write-Host ""
-    Write-Host "1. KEK Certificate (June 2026):" -ForegroundColor White
-    Write-Host "   Expiring:  Microsoft Corporation KEK CA 2011" -ForegroundColor Red
-    Write-Host "   Updated:   Microsoft Corporation KEK 2K CA 2023" -ForegroundColor Green
-    Write-Host "   Purpose:   Signs updates to DB and DBX" -ForegroundColor Gray
-    Write-Host "   Location:  KEK" -ForegroundColor Gray
+    $counter = 1
+    foreach ($cert in $certificateData) {
+        Write-Host "$counter. Certificate Update Details:" -ForegroundColor White
+        Write-Host "   Expiring Certificate:  " -NoNewline -ForegroundColor Gray
+        Write-Host "$($cert.ExpiringCertificate)" -ForegroundColor Red
+        Write-Host "   Expiration Date:       " -NoNewline -ForegroundColor Gray
+        Write-Host "$($cert.ExpirationDate)" -ForegroundColor Yellow
+        Write-Host "   New Certificate:       " -NoNewline -ForegroundColor Gray
+        Write-Host "$($cert.NewCertificate)" -ForegroundColor Green
+        Write-Host "   Storing Location:      " -NoNewline -ForegroundColor Gray
+        Write-Host "$($cert.StoringLocation)" -ForegroundColor Cyan
+        Write-Host "   Purpose:               " -NoNewline -ForegroundColor Gray
+        Write-Host "$($cert.Purpose)" -ForegroundColor Gray
+        Write-Host "   Status:                " -NoNewline -ForegroundColor Gray
+        $statusColor = if ($cert.Status -eq "Updated") { "Green" } else { "Yellow" }
+        Write-Host "$($cert.Status)" -ForegroundColor $statusColor
+        Write-Host ""
+        $counter++
+    }
     
-    Write-Host ""
-    Write-Host "2. UEFI Certificate (June 2026):" -ForegroundColor White
-    Write-Host "   Expiring:  Microsoft Corporation UEFI CA 2011" -ForegroundColor Red
-    Write-Host "   Updated:   Microsoft Corporation UEFI CA 2023" -ForegroundColor Green
-    Write-Host "   Purpose:   Signs third-party OS and hardware drivers" -ForegroundColor Gray
-    Write-Host "   Location:  DB" -ForegroundColor Gray
-    
-    Write-Host ""
-    Write-Host "3. Option ROM Certificate (June 2026):" -ForegroundColor White
-    Write-Host "   Expiring:  Third-party UEFI CA" -ForegroundColor Red
-    Write-Host "   Updated:   Microsoft Option ROM UEFI CA 2023" -ForegroundColor Green
-    Write-Host "   Purpose:   Signs third-party option ROMs" -ForegroundColor Gray
-    Write-Host "   Location:  DB" -ForegroundColor Gray
-    
-    Write-Host ""
-    Write-Host "4. Windows Certificate (October 2026):" -ForegroundColor White
-    Write-Host "   Expiring:  Microsoft Windows Production PCA 2011" -ForegroundColor Red
-    Write-Host "   Updated:   Windows UEFI CA 2023" -ForegroundColor Green
-    Write-Host "   Purpose:   Signs Windows bootloader and boot components" -ForegroundColor Gray
-    Write-Host "   Location:  DB" -ForegroundColor Gray
-    
-    Write-Host ""
     Write-Host "================================================================" -ForegroundColor Gray
     
     # Get and display current certificate status
@@ -506,10 +633,108 @@ function Show-CertificateOverview {
     return $certInfo
 }
 
+function Show-SecureBootTasks {
+    Write-Host "================================================================" -ForegroundColor Gray
+    Write-Host "SECURE BOOT SCHEDULED TASKS" -ForegroundColor Yellow
+    Write-Host "================================================================" -ForegroundColor Gray
+    
+    # Define the expected Secure Boot task path and name
+    $expectedTaskPath = "\Microsoft\Windows\PI\"
+    $expectedTaskName = "Secure-Boot-Update"
+    
+    try {
+        # Look for Secure Boot related tasks
+        Write-Host "Searching for Secure Boot related scheduled tasks..." -ForegroundColor Cyan
+        
+        $secureBootTasks = Get-ScheduledTask | Where-Object { 
+            $_.TaskName -like "*Secure*Boot*" #-or 
+            #$_.TaskName -like "*UEFI*" -or
+            #$_.TaskPath -like "*PI*" 
+        }
+        
+        if ($secureBootTasks) {
+            Write-Host "Found $($secureBootTasks.Count) Secure Boot related task(s):" -ForegroundColor Green
+            Write-Host ""
+            
+            foreach ($task in $secureBootTasks) {
+                Write-Host "Task Name: $($task.TaskName)" -ForegroundColor White
+                Write-Host "  Path: $($task.TaskPath)" -ForegroundColor Gray
+                Write-Host "  State: $($task.State)" -ForegroundColor $(if ($task.State -eq 'Ready') { 'Green' } elseif ($task.State -eq 'Running') { 'Yellow' } else { 'Red' })
+                Write-Host "  Description: $($task.Description)" -ForegroundColor Gray
+                
+                # Get additional task info using proper path/name separation
+                try {
+                    $taskInfo = Get-ScheduledTaskInfo -TaskPath $task.TaskPath -TaskName $task.TaskName -ErrorAction SilentlyContinue
+                    if ($taskInfo) {
+                        Write-Host "  Last Run: $($taskInfo.LastRunTime)" -ForegroundColor Gray
+                        Write-Host "  Last Result: $($taskInfo.LastTaskResult)" -ForegroundColor Gray
+                        Write-Host "  Next Run: $($taskInfo.NextRunTime)" -ForegroundColor Gray
+                    }
+                } catch {
+                    Write-Host "  (Unable to get additional task info)" -ForegroundColor Gray
+                }
+                Write-Host ""
+            }
+            
+            # Specifically check for the main Secure Boot update task using expected path and name
+            $mainTask = $secureBootTasks | Where-Object { 
+                $_.TaskName -eq $expectedTaskName -and $_.TaskPath -eq $expectedTaskPath 
+            }
+            if ($mainTask) {
+                Write-Host "✓ Main Secure Boot update task found and available" -ForegroundColor Green
+                Write-Host "  Expected Path: $expectedTaskPath" -ForegroundColor Gray
+                Write-Host "  Expected Name: $expectedTaskName" -ForegroundColor Gray
+                if ($mainTask.State -eq 'Ready') {
+                    Write-Host "✓ Task is ready to run" -ForegroundColor Green
+                } elseif ($mainTask.State -eq 'Running') {
+                    Write-Host "⚠ Task is currently running" -ForegroundColor Yellow
+                } else {
+                    Write-Host "⚠ Task state: $($mainTask.State)" -ForegroundColor Yellow
+                }
+            } else {
+                Write-Host "⚠ Main 'Secure-Boot-Update' task not found at expected location" -ForegroundColor Yellow
+                Write-Host "  Expected: $expectedTaskPath$expectedTaskName" -ForegroundColor Gray
+                
+                # Check if a similar task exists with different path/name
+                $similarTask = $secureBootTasks | Where-Object { $_.TaskName -eq $expectedTaskName }
+                if ($similarTask) {
+                    Write-Host "  Found similar task at: $($similarTask.TaskPath)$($similarTask.TaskName)" -ForegroundColor Yellow
+                }
+            }
+            
+        } else {
+            Write-Host "⚠ No Secure Boot related scheduled tasks found" -ForegroundColor Yellow
+            Write-Host "This may indicate:" -ForegroundColor Gray
+            Write-Host "  - System doesn't support Secure Boot certificate updates" -ForegroundColor Gray
+            Write-Host "  - Windows updates haven't created the tasks yet" -ForegroundColor Gray
+            Write-Host "  - Tasks may be in a different location" -ForegroundColor Gray
+        }
+        
+        # Additional check: Try to directly access the expected task
+        Write-Host ""
+        Write-Host "Direct task check:" -ForegroundColor Cyan
+        try {
+            $directTask = Get-ScheduledTask -TaskPath $expectedTaskPath -TaskName $expectedTaskName -ErrorAction Stop
+            Write-Host "✓ Direct access successful: $($directTask.TaskPath)$($directTask.TaskName)" -ForegroundColor Green
+            Write-Host "  State: $($directTask.State)" -ForegroundColor Green
+        } catch {
+            Write-Host "✗ Direct access failed: Task not found at $expectedTaskPath$expectedTaskName" -ForegroundColor Red
+            Write-Host "  Error: $($_.Exception.Message)" -ForegroundColor Gray
+        }
+        
+    } catch {
+        Write-Host "✗ Error searching for scheduled tasks: $_" -ForegroundColor Red
+    }
+    
+    Write-Host "================================================================" -ForegroundColor Gray
+}
+    
+Write-Host "================================================================" -ForegroundColor Gray
+
 # Main execution loop
 do {
     Show-Menu
-    $choice = Read-Host "Select a task (1-10)"
+    $choice = Read-Host "Select a task (1-11)"
 
     try {
         switch ($choice) {
@@ -561,26 +786,30 @@ do {
                 Export-SecureBootReport
             }
             6 {
+                # Show Secure Boot scheduled tasks
+                Show-SecureBootTasks
+            }
+            7 {
                 # Set registry key for certificate update
                 Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\SecureBoot" -Name "AvailableUpdates" -Value 0x40
                 Write-Host "Registry key set successfully to apply the update" -ForegroundColor Green
     
-                # Prompt to execute task 7 automatically or manually
-                $task7Choice = Read-Host "Do you want to execute task 7 (Run scheduled task) automatically (Y) or manually (M)?"
-                if ($task7Choice -eq 'Y' -or $task7Choice -eq 'y') {
+                # Prompt to execute task 8 automatically or manually
+                $task8Choice = Read-Host "Do you want to execute task 8 (Run scheduled task) automatically (Y) or manually (M)?"
+                if ($task8Choice -eq 'Y' -or $task8Choice -eq 'y') {
                     # Run scheduled task to update Secure Boot DB with the new CA
                     RunScheduledTask
-                } elseif ($task7Choice -eq 'M' -or $task7Choice -eq 'm') {
-                    Write-Host "You can manually execute task 7 from the menu."
+                } elseif ($task8Choice -eq 'M' -or $task8Choice -eq 'm') {
+                    Write-Host "You can manually execute task 8 from the menu."
                 } else {
-                    Write-Host "Invalid choice. Task 7 will not be executed."
+                    Write-Host "Invalid choice. Task 8 will not be executed."
                 }
             }
-            7 {
+            8 {
                 # Run scheduled task manually to update Secure Boot DB with the new CA
                 RunScheduledTask
             }
-            8 {
+            9 {
                 # Confirm reboot
                 $confirmReboot = Read-Host "Do you want to reboot the machine? (Y/N)"
                 if ($confirmReboot -eq 'Y' -or $confirmReboot -eq 'y') {
@@ -591,7 +820,7 @@ do {
                     Write-Host "Reboot canceled."
                 }
             }
-            9 {
+            10 {
                 # Verify Secure Boot DB update with detailed analysis
                 Write-Host "Performing detailed certificate verification..." -ForegroundColor Yellow
                 $certInfo = Get-DetailedCertificateInfo
@@ -647,13 +876,13 @@ do {
                     Write-Host ""
                 }
             }
-            10 {
+            11 {
                 # Exit
                 Write-Host "Exiting Secure Boot Update Menu."
             }
             default {
                 # Invalid selection
-                Write-Host "Invalid selection. Please enter a number between 1 and 10."
+                Write-Host "Invalid selection. Please enter a number between 1 and 11."
             }
         }
     }
@@ -662,9 +891,9 @@ do {
         Write-Host "An error occurred: $_" -ForegroundColor Red
     }    
 
-    if ($choice -ne 10) {
+    if ($choice -ne 11) {
         # Prompt to continue
         $null = Read-Host "Press Enter to continue..."
     }
 
-} while ($choice -ne 10)
+} while ($choice -ne 11)
