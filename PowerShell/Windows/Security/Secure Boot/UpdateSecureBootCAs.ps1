@@ -165,6 +165,10 @@ function Get-SystemInfo {
     $bios = Get-CimInstance -Class Win32_BIOS
     $os = Get-CimInstance -Class Win32_OperatingSystem
 
+    # Get Windows version information
+    $v = Get-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion'
+    $windowsVersionString = "Windows version: {0} (Build {1}.{2})" -f $v.DisplayVersion, $v.CurrentBuildNumber, $v.UBR
+
     $info = [PSCustomObject]@{
         ComputerName     = $env:COMPUTERNAME
         Manufacturer     = $system.Manufacturer
@@ -173,6 +177,7 @@ function Get-SystemInfo {
         BIOS_ReleaseDate = $bios.ReleaseDate
         OS_Version       = $os.Version
         OS_BuildNumber   = $os.BuildNumber
+        OS_VersionMajor  = $windowsVersionString
         Timestamp        = (Get-Date).ToString("s")
     }
 
