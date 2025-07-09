@@ -1009,9 +1009,9 @@ do {
                 # Check if system supports Secure Boot
                 try {
                     Get-SecureBootUEFI -Name SetupMode -ErrorAction Stop | Out-Null
-                    Write-Host "System supports Secure Boot UEFI" -ForegroundColor Green
+                    Write-Host "System supports Secure Boot UEFI`n" -ForegroundColor Green
                 } catch {
-                    Write-Host "Warning: System may not support Secure Boot or is running in Legacy BIOS mode" -ForegroundColor Yellow
+                    Write-Host "Warning: System may not support Secure Boot or is running in Legacy BIOS mode`n" -ForegroundColor Yellow
                 }
             }
             3 {
