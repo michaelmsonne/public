@@ -317,7 +317,7 @@ function Export-SecureBootReport {
     $secureBootStatus = Get-SecureBootStatus
     
     # Create logs directory if it doesn't exist
-    $logPath = "C:\Logs"
+    $logPath = "C:\Temp"
     if (-not (Test-Path $logPath)) {
         New-Item -Path $logPath -ItemType Directory -Force | Out-Null
     }
@@ -812,7 +812,7 @@ function Show-SecureBootTasks {
 
 function Export-TPMEventLogs {
     param(
-        [string]$LogPath = "C:\Logs",
+        [string]$LogPath = "C:\Temp",
         [int]$DaysBack = 30
     )
     
