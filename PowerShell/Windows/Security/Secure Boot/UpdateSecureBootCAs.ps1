@@ -26,7 +26,7 @@
 
     .CHANGELOG
         14-02-2024 - Michael Morten Sonne - Initial release
-        09-07-2025 - Michael Morten Sonne - Enhanced with comprehensive system checking, status reporting, and prerequisites setup per Microsoft guidance
+        09-07-2025 - Michael Morten Sonne - Enhanced with comprehensive system checking, status reporting, and prerequisites setup per Microsoft guidance like https://techcommunity.microsoft.com/blog/windows-itpro-blog/act-now-secure-boot-certificates-expire-in-june-2026/4426856
 
 	.EXAMPLE
         .\UpdateSecureBootCAs.ps1
