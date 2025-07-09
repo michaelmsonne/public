@@ -336,13 +336,15 @@ function Get-DetailedCertificateInfo {
         DB_Windows_Status = "Not Checked"
         DB_Windows_Legacy_Found = $false
         DB_Windows_Updated_Found = $false
+        DB_OptionROM_Status = "Not Checked"
+        DB_OptionROM_Updated_Found = $false
         OverallStatus = "Unknown"
         CertificateDetails = @()
     }
     
     try {
         # Check KEK (Key Exchange Key)
-        Write-Host "► Checking KEK certificates..." -ForegroundColor Cyan
+        Write-Host "> Checking KEK certificates..." -ForegroundColor Cyan
         try {
             $kekData = Get-SecureBootUEFI -Name kek -ErrorAction Stop
             $kekString = [System.Text.Encoding]::ASCII.GetString($kekData.bytes)
@@ -353,10 +355,10 @@ function Get-DetailedCertificateInfo {
                 Write-Host "  [+] Found: Microsoft Corporation KEK CA 2011 (expires June 2026)" -ForegroundColor Yellow
             }
             
-            # Check for updated KEK certificate
-            if ($kekString -match 'Microsoft Corporation KEK CA 2023') {
+            # Check for updated KEK certificate - correct name from Microsoft table
+            if ($kekString -match 'Microsoft Corporation KEK 2K CA 2023') {
                 $results.KEK_Updated_Found = $true
-                Write-Host "  [+] Found: Microsoft Corporation KEK CA 2023 (updated certificate)" -ForegroundColor Green
+                Write-Host "  [+] Found: Microsoft Corporation KEK 2K CA 2023 (updated certificate)" -ForegroundColor Green
             }
             
             $results.KEK_Status = if ($results.KEK_Updated_Found) { "Updated" } elseif ($results.KEK_Legacy_Found) { "Legacy - Update Required" } else { "Unknown" }
@@ -368,7 +370,7 @@ function Get-DetailedCertificateInfo {
         Write-Host ""
         
         # Check DB (Signature Database)
-        Write-Host "► Checking DB certificates..." -ForegroundColor Cyan
+        Write-Host "> Checking DB certificates..." -ForegroundColor Cyan
         try {
             $dbData = Get-SecureBootUEFI -Name db -ErrorAction Stop
             $dbString = [System.Text.Encoding]::ASCII.GetString($dbData.bytes)
@@ -379,7 +381,7 @@ function Get-DetailedCertificateInfo {
                 Write-Host "  [+] Found: Microsoft Corporation UEFI CA 2011 (expires June 2026)" -ForegroundColor Yellow
             }
             
-            # Check for updated UEFI certificates
+            # Check for updated UEFI certificates - align with Microsoft table
             if ($dbString -match 'Microsoft Corporation UEFI CA 2023') {
                 $results.DB_UEFI_Updated_Found = $true
                 Write-Host "  [+] Found: Microsoft Corporation UEFI CA 2023 (updated certificate)" -ForegroundColor Green
@@ -387,6 +389,9 @@ function Get-DetailedCertificateInfo {
             
             if ($dbString -match 'Microsoft Option ROM UEFI CA 2023') {
                 Write-Host "  [+] Found: Microsoft Option ROM UEFI CA 2023 (updated certificate)" -ForegroundColor Green
+                $results.DB_OptionROM_Updated_Found = $true
+            } else {
+                $results.DB_OptionROM_Updated_Found = $false
             }
             
             # Check for legacy Windows certificates
@@ -403,6 +408,7 @@ function Get-DetailedCertificateInfo {
             
             $results.DB_UEFI_Status = if ($results.DB_UEFI_Updated_Found) { "Updated" } elseif ($results.DB_UEFI_Legacy_Found) { "Legacy - Update Required" } else { "Unknown" }
             $results.DB_Windows_Status = if ($results.DB_Windows_Updated_Found) { "Updated" } elseif ($results.DB_Windows_Legacy_Found) { "Legacy - Update Required" } else { "Unknown" }
+            $results.DB_OptionROM_Status = if ($results.DB_OptionROM_Updated_Found) { "Updated" } elseif ($results.DB_UEFI_Legacy_Found) { "Legacy - Update Required" } else { "Not Found" }
             
         } catch {
             $results.DB_UEFI_Status = "Error accessing DB"
@@ -419,12 +425,12 @@ function Get-DetailedCertificateInfo {
             $results.OverallStatus = "Status Unknown"
         }
         
-        # Create detailed certificate information
+        # Create detailed certificate information - align with Microsoft table
         $results.CertificateDetails = @(
             [PSCustomObject]@{
                 ExpiringCertificate = "Microsoft Corporation KEK CA 2011"
                 ExpirationDate = "June 2026"
-                NewCertificate = "Microsoft Corporation KEK CA 2023"
+                NewCertificate = "Microsoft Corporation KEK 2K CA 2023"
                 StoringLocation = "Stored in KEK"
                 Purpose = "Signs updates to DB and DBX"
                 LegacyFound = $results.KEK_Legacy_Found
@@ -432,34 +438,34 @@ function Get-DetailedCertificateInfo {
                 Status = $results.KEK_Status
             },
             [PSCustomObject]@{
-                ExpiringCertificate = "Microsoft Windows Production PCA 2011"
-                ExpirationDate = "Oct 2026"
-                NewCertificate = "Windows UEFI CA 2023"
-                StoringLocation = "Stored in DB"
-                Purpose = "Used for signing the Windows boot loader"
-                LegacyFound = $results.DB_Windows_Legacy_Found
-                UpdatedFound = $results.DB_Windows_Updated_Found
-                Status = $results.DB_Windows_Status
-            },
-            [PSCustomObject]@{
-                ExpiringCertificate = "Microsoft UEFI CA 2011"
+                ExpiringCertificate = "Microsoft Corporation UEFI CA 2011 (or third-party UEFI CA)"
                 ExpirationDate = "June 2026"
-                NewCertificate = "Microsoft UEFI CA 2023"
+                NewCertificate = "Microsoft Corporation UEFI CA 2023"
                 StoringLocation = "Stored in DB"
-                Purpose = "Signs third-party boot loaders and EFI applications"
+                Purpose = "Signs third-party OS and hardware driver components"
                 LegacyFound = $results.DB_UEFI_Legacy_Found
                 UpdatedFound = $results.DB_UEFI_Updated_Found
                 Status = $results.DB_UEFI_Status
             },
             [PSCustomObject]@{
-                ExpiringCertificate = "Microsoft UEFI CA 2011"
+                ExpiringCertificate = "Microsoft Corporation UEFI CA 2011 (or third-party UEFI CA)"
                 ExpirationDate = "June 2026"
                 NewCertificate = "Microsoft Option ROM UEFI CA 2023"
                 StoringLocation = "Stored in DB"
                 Purpose = "Signs third-party option ROMs"
                 LegacyFound = $results.DB_UEFI_Legacy_Found
-                UpdatedFound = ($dbString -match 'Microsoft Option ROM UEFI CA 2023')
-                Status = if ($dbString -match 'Microsoft Option ROM UEFI CA 2023') { "Updated" } else { "Not Found" }
+                UpdatedFound = $results.DB_OptionROM_Updated_Found
+                Status = $results.DB_OptionROM_Status
+            },
+            [PSCustomObject]@{
+                ExpiringCertificate = "Microsoft Windows Production PCA 2011"
+                ExpirationDate = "Oct 2026"
+                NewCertificate = "Windows UEFI CA 2023"
+                StoringLocation = "Stored in DB"
+                Purpose = "Signs the Windows bootloader and boot components"
+                LegacyFound = $results.DB_Windows_Legacy_Found
+                UpdatedFound = $results.DB_Windows_Updated_Found
+                Status = $results.DB_Windows_Status
             }
         )
         
@@ -486,95 +492,139 @@ function Show-CertificateOverview {
     Write-Host "================================================================" -ForegroundColor Gray
     Write-Host ""
     
-    # Certificate data array matching your requested format
+    # Certificate data array matching Microsoft table exactly
     $certificateData = @(
         [PSCustomObject]@{
             ExpiringCertificate = "Microsoft Corporation KEK CA 2011"
             ExpirationDate = "June 2026"
-            NewCertificate = "Microsoft Corporation KEK CA 2023"
+            NewCertificate = "Microsoft Corporation KEK 2K CA 2023"
             StoringLocation = "Stored in KEK"
             Purpose = "Signs updates to DB and DBX"
             Status = $certInfo.KEK_Status
+        },
+        [PSCustomObject]@{
+            ExpiringCertificate = "Microsoft Corporation UEFI CA 2011 (or third-party UEFI CA)"
+            ExpirationDate = "June 2026"
+            NewCertificate = "Microsoft Corporation UEFI CA 2023"
+            StoringLocation = "Stored in DB"
+            Purpose = "Signs third-party OS and hardware driver components"
+            Status = $certInfo.DB_UEFI_Status
+        },
+        [PSCustomObject]@{
+            ExpiringCertificate = "Microsoft Corporation UEFI CA 2011 (or third-party UEFI CA)"
+            ExpirationDate = "June 2026"
+            NewCertificate = "Microsoft Option ROM UEFI CA 2023"
+            StoringLocation = "Stored in DB"
+            Purpose = "Signs third-party option ROMs"
+            Status = $certInfo.DB_OptionROM_Status
         },
         [PSCustomObject]@{
             ExpiringCertificate = "Microsoft Windows Production PCA 2011"
             ExpirationDate = "Oct 2026"
             NewCertificate = "Windows UEFI CA 2023"
             StoringLocation = "Stored in DB"
-            Purpose = "Used for signing the Windows boot loader"
+            Purpose = "Signs the Windows bootloader and boot components"
             Status = $certInfo.DB_Windows_Status
-        },
-        [PSCustomObject]@{
-            ExpiringCertificate = "Microsoft UEFI CA 2011"
-            ExpirationDate = "June 2026"
-            NewCertificate = "Microsoft UEFI CA 2023"
-            StoringLocation = "Stored in DB"
-            Purpose = "Signs third-party boot loaders and EFI applications"
-            Status = $certInfo.DB_UEFI_Status
-        },
-        [PSCustomObject]@{
-            ExpiringCertificate = "Microsoft UEFI CA 2011"
-            ExpirationDate = "June 2026"
-            NewCertificate = "Microsoft Option ROM UEFI CA 2023"
-            StoringLocation = "Stored in DB"
-            Purpose = "Signs third-party option ROMs"
-            Status = if ($certInfo.DB_String -match 'Microsoft Option ROM UEFI CA 2023') { "Updated" } else { "Not Found" }
         }
     )
     
-    # Display table format
+    # Display table format - keeping original names but formatted for console
     Write-Host "`nCertificate Overview Table:" -ForegroundColor Cyan
-    Write-Host ("=" * 170) -ForegroundColor Gray
+    Write-Host "================================================================" -ForegroundColor Gray
+    Write-Host ""
     
-    # Table header
-    $headerFormat = "{0,-40} {1,-15} {2,-40} {3,-15} {4,-50}"
-    Write-Host ($headerFormat -f "Expiring Certificate", "Expiration", "New Certificate", "Storing Location", "Purpose") -ForegroundColor Yellow
-    Write-Host ("=" * 170) -ForegroundColor Gray
-    
-    # Table rows
+    # Display certificates in a list format instead of table for better readability
+    $counter = 1
     foreach ($cert in $certificateData) {
-        $expiringColor = "Red"
-        $newColor = if ($cert.Status -eq "Updated") { "Green" } else { "Yellow" }
-        $locationColor = "Cyan"
-        $purposeColor = "White"
+        $statusColor = if ($cert.Status -eq "Updated") { "Green" } 
+                      elseif ($cert.Status -like "*Legacy*") { "Yellow" } 
+                      else { "Red" }
         
-        # Split the row to apply colors to each column
-        $parts = @(
-            $cert.ExpiringCertificate.PadRight(40),
-            $cert.ExpirationDate.PadRight(15),
-            $cert.NewCertificate.PadRight(40),
-            $cert.StoringLocation.PadRight(15),
-            $cert.Purpose.PadRight(50)
-        )
+        $statusSymbol = if ($cert.Status -eq "Updated") { "[+]" } 
+                       elseif ($cert.Status -like "*Legacy*") { "[!]" } 
+                       else { "[-]" }
         
-        Write-Host $parts[0] -ForegroundColor $expiringColor -NoNewline
-        Write-Host $parts[1] -ForegroundColor $expiringColor -NoNewline
-        Write-Host $parts[2] -ForegroundColor $newColor -NoNewline
-        Write-Host $parts[3] -ForegroundColor $locationColor -NoNewline
-        Write-Host $parts[4] -ForegroundColor $purposeColor
+        Write-Host "$counter. " -NoNewline -ForegroundColor White
+        Write-Host "Expiring: " -NoNewline -ForegroundColor Gray
+        Write-Host "$($cert.ExpiringCertificate)" -ForegroundColor Red
+        Write-Host "   Expires: " -NoNewline -ForegroundColor Gray
+        Write-Host "$($cert.ExpirationDate)" -NoNewline -ForegroundColor Yellow
+        Write-Host " | Location: " -NoNewline -ForegroundColor Gray
+        Write-Host "$($cert.StoringLocation)" -NoNewline -ForegroundColor Cyan
+        Write-Host " | Status: " -NoNewline -ForegroundColor Gray
+        Write-Host "$statusSymbol $($cert.Status)" -ForegroundColor $statusColor
+        
+        Write-Host "   New Cert: " -NoNewline -ForegroundColor Gray
+        Write-Host "$($cert.NewCertificate)" -ForegroundColor Green
+        Write-Host "   Purpose:  " -NoNewline -ForegroundColor Gray
+        Write-Host "$($cert.Purpose)" -ForegroundColor White
+        Write-Host ""
+        $counter++
     }
     
-    Write-Host ("=" * 170) -ForegroundColor Gray
+    Write-Host "================================================================" -ForegroundColor Gray
     
-    # Display the certificate information in a structured format
+    # Quick summary
+    Write-Host ""
+    Write-Host "Summary:" -ForegroundColor Yellow
+    
+    # Fixed counting logic
+    $updatedCount = 0
+    $legacyCount = 0
+    $notFoundCount = 0
+    
+    foreach ($cert in $certificateData) {
+        switch ($cert.Status) {
+            "Updated" { $updatedCount++ }
+            "Legacy - Update Required" { $legacyCount++ }
+            "Not Found" { $notFoundCount++ }
+        }
+    }
+    
+    $totalCount = $certificateData.Count
+    
+    Write-Host "Total certificates: $totalCount" -ForegroundColor White
+    Write-Host "Updated: " -NoNewline -ForegroundColor Gray
+    Write-Host "$updatedCount" -ForegroundColor Green
+    Write-Host "Legacy (need update): " -NoNewline -ForegroundColor Gray  
+    Write-Host "$legacyCount" -ForegroundColor Yellow
+    Write-Host "Not found: " -NoNewline -ForegroundColor Gray
+    Write-Host "$notFoundCount" -ForegroundColor Red
+    Write-Host ""
+    
+    # Display the certificate information in a structured format with proper alignment
     Write-Host "`nDetailed Certificate Information:" -ForegroundColor Yellow
     Write-Host "================================================================" -ForegroundColor Gray
     
     $counter = 1
     foreach ($cert in $certificateData) {
         Write-Host "$counter. Certificate Update Details:" -ForegroundColor White
-        Write-Host "   Expiring Certificate:  " -NoNewline -ForegroundColor Gray
-        Write-Host "$($cert.ExpiringCertificate)" -ForegroundColor Red
+        
+        # Use consistent field width for better alignment
         Write-Host "   Expiration Date:       " -NoNewline -ForegroundColor Gray
         Write-Host "$($cert.ExpirationDate)" -ForegroundColor Yellow
-        Write-Host "   New Certificate:       " -NoNewline -ForegroundColor Gray
+        
+        Write-Host "   Expiring Certificate:  " -NoNewline -ForegroundColor Gray
+        Write-Host "$($cert.ExpiringCertificate)" -ForegroundColor Red
+        
+        Write-Host "   Updated Certificate:   " -NoNewline -ForegroundColor Gray
         Write-Host "$($cert.NewCertificate)" -ForegroundColor Green
+        
+        Write-Host "   What it does:          " -NoNewline -ForegroundColor Gray
+        Write-Host "$($cert.Purpose)" -ForegroundColor White
+        
         Write-Host "   Storing Location:      " -NoNewline -ForegroundColor Gray
-        Write-Host "$($cert.StoringLocation)" -ForegroundColor Cyan
-        Write-Host "   Purpose:               " -NoNewline -ForegroundColor Gray
-        Write-Host "$($cert.Purpose)" -ForegroundColor Gray
+        # Simplify location display
+        $location = if ($cert.StoringLocation -eq "Stored in KEK") { "KEK" } else { "DB" }
+        Write-Host "$location" -ForegroundColor Cyan
+        
         Write-Host "   Status:                " -NoNewline -ForegroundColor Gray
-        $statusColor = if ($cert.Status -eq "Updated") { "Green" } else { "Yellow" }
+        $statusColor = switch ($cert.Status) {
+            "Updated" { "Green" }
+            "Legacy - Update Required" { "Yellow" }  
+            "Not Found" { "Red" }
+            default { "Gray" }
+        }
         Write-Host "$($cert.Status)" -ForegroundColor $statusColor
         Write-Host ""
         $counter++
@@ -610,11 +660,11 @@ function Show-CertificateOverview {
         $statusSymbol = switch ($cert.Status) {
             "Updated" { "[+]" }
             "Legacy - Update Required" { "[!]" }
-            "Not Found" { "?" }
-            default { "✗" }
+            "Not Found" { "[?]" }
+            default { "[-]" }
         }
         
-        Write-Host "$statusSymbol $($cert.Location) - $($cert.ExpirationDate): " -NoNewline
+        Write-Host "$statusSymbol $($cert.StoringLocation) - $($cert.ExpirationDate): " -NoNewline
         Write-Host "$($cert.Status)" -ForegroundColor $statusColor
         Write-Host "   Legacy Found: $($cert.LegacyFound) | Updated Found: $($cert.UpdatedFound)" -ForegroundColor Gray
     }
@@ -900,8 +950,8 @@ do {
 # SIG # Begin signature block
 # MIIudgYJKoZIhvcNAQcCoIIuZzCCLmMCAQExDzANBglghkgBZQMEAgEFADB5Bgor
 # BgEEAYI3AgEEoGswaTA0BgorBgEEAYI3AgEeMCYCAwEAAAQQH8w7YFlLCE63JNLG
-# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCA+3bd7h9Gt64Yk
-# 06jW9My0S2W3sts3OCqw+UFZHMlEAqCCEd8wggVvMIIEV6ADAgECAhBI/JO0YFWU
+# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCAANfvw7rTPiOxU
+# 7be5YrVIKznGlS98NJRKx6QtWIalQqCCEd8wggVvMIIEV6ADAgECAhBI/JO0YFWU
 # jTanyYqJ1pQWMA0GCSqGSIb3DQEBDAUAMHsxCzAJBgNVBAYTAkdCMRswGQYDVQQI
 # DBJHcmVhdGVyIE1hbmNoZXN0ZXIxEDAOBgNVBAcMB1NhbGZvcmQxGjAYBgNVBAoM
 # EUNvbW9kbyBDQSBMaW1pdGVkMSEwHwYDVQQDDBhBQUEgQ2VydGlmaWNhdGUgU2Vy
@@ -1001,23 +1051,23 @@ do {
 # KzApBgNVBAMTIlNlY3RpZ28gUHVibGljIENvZGUgU2lnbmluZyBDQSBSMzYCEBHh
 # oIZkh66CYIKNKPBResYwDQYJYIZIAWUDBAIBBQCgfDAQBgorBgEEAYI3AgEMMQIw
 # ADAZBgkqhkiG9w0BCQMxDAYKKwYBBAGCNwIBBDAcBgorBgEEAYI3AgELMQ4wDAYK
-# KwYBBAGCNwIBFTAvBgkqhkiG9w0BCQQxIgQgDL5aDhOSf2/o0bhp2hrCmR0oX2OZ
-# JgOE7evNtdqWWAswDQYJKoZIhvcNAQEBBQAEggIAdw5Or80RtqSjw4guSojXDf3z
-# azKWdz9BMZX6qnjpVBt5YdoZt64Zp/GKVvOt7LMZMgYvQWFm1NZ6yxRpwCUp1tIj
-# CtArgxhkHczp5mDrYS3YRMEQsUkAE6IQ7xykbb+Un265t5LNfkEcv5ew46URpbQC
-# we5U4raiF3r76ebVkG0NjEsjlxyunnNDP2fXCgcKvh+AVioNIe32/3PLZnTUnSdL
-# nSWQu769An6s28g6QN8tkJ2LixOMivj4hh/haVqFjsftdNDlhvA+LmIlbyL2JcQz
-# 02X0B4QwTjp4DLNdNxqw6HZbY6QwTM26Xj3fPgLX9faw413QTc2KebilapBBm4SI
-# Wez2EhjuRm2gZP7Grj/faPD3SBu67JIv4G/T8LSakTyG6pN7kqNXiuNG5reWboQU
-# hBXHzQ0zCL+FzfJbIvMkrcjLNOmbJkJorHtTfU/nfYQBL5ANRmbcWY6la53b62Od
-# z2vBrqWiUlUtQfxSZePJq9LYRDmKgpc/ap2SxUfKVqwWwS5MenmJAzuyEYH+K0oB
-# 2Xlkgzbn3jCqzQbhfoD/PWi3RJ0Ix2mmxY21trojslwNo2xb6ATo7uEzTT8WXbB2
-# /DxpaFAnyrwDTa9XkC4N84DDg5veotOn9fsIxtV9tpNQnFj0aFafhOUjsZCxmOLn
-# /AUDO2U5PSgtGZA2dUKhghjYMIIY1AYKKwYBBAGCNwMDATGCGMQwghjABgkqhkiG
+# KwYBBAGCNwIBFTAvBgkqhkiG9w0BCQQxIgQg0OVvkvAuiI7CbGqCC9F/bSBNE7P3
+# JlAQLUf5hlWVUt8wDQYJKoZIhvcNAQEBBQAEggIAmgEs9fPv6gvFYSHIccpbGuO1
+# sE8h27Yaf9kkR2x85oEW75uKQnK2w+YOn2NjTmb4NMk9bH3AJx4afHUVp1xanW3J
+# JgrEtlpDwP9xS9kInJ6MgVbG1KN/w7p2Cnziv1ek7xH/oJqmqADxDNXmsSZkMEXn
+# iEpLOAE41CKSYMIPuf1qmjbyjlkr15L13+VobdktPXOUvGOmrNwh5mDS+ZBx1E6q
+# 9o7lng/yMV1we2TL2i7khkp9u8ijn2Pm5OiipAfc/3gDlBdoFHvKnIt7W+i64jCK
+# wdGYGs5sVBDeJhIAGjPAA+njG7sn06J6ijaC0ngPPE9OmYznrPMFcMeM6gNQf7Iu
+# ZUbQ6ItjVM01plcqgLTRtBiopNNgrJUSjq5Uw53Z3p/Hvvg8TDokRVBs34a4ezY+
+# PzA11l4eFi3PjUokc0rlEDf9PVtuIgO1duIKNCGOnViMYT8MUsreFWDbwftUShGU
+# aIvrmYtp+bGoPUARvcH8sYCW6FUIcTkOWAtcY0WqsfbwtBC4k3eQswymk7ekzaUV
+# aPsRKj5unyY0pC0pTv7bYOd7TWpQNItiEYF4GMCUTa0VSCYo/mo07CRTUMISH1mo
+# fH0EhwnuUIWwRa/YnQBinwM1XtHQob8zOA+QmkhA/eQRiGp8ItVJuEk259M/B4kD
+# x0JaSpo57uRrBnoCTR+hghjYMIIY1AYKKwYBBAGCNwMDATGCGMQwghjABgkqhkiG
 # 9w0BBwKgghixMIIYrQIBAzEPMA0GCWCGSAFlAwQCAgUAMIH4BgsqhkiG9w0BCRAB
-# BKCB6ASB5TCB4gIBAQYKKwYBBAGyMQIBATAxMA0GCWCGSAFlAwQCAQUABCCkwvw3
-# 9CysBLWz3kiMZoW7sZG63dy5mD3d5+vZlpvTNAIVAM8fU38O9Jfj/+IxA96gU18l
-# uKc1GA8yMDI1MDcwOTE0MjAxMFqgdqR0MHIxCzAJBgNVBAYTAkdCMRcwFQYDVQQI
+# BKCB6ASB5TCB4gIBAQYKKwYBBAGyMQIBATAxMA0GCWCGSAFlAwQCAQUABCDYhzYk
+# JQITAETuTuw1MFhNjAQvLo4FHB+grqzZAkv2tAIVAPlC3OQCp6f8/vjFzkS9/htL
+# XYQRGA8yMDI1MDcwOTE2Mzc1NlqgdqR0MHIxCzAJBgNVBAYTAkdCMRcwFQYDVQQI
 # Ew5XZXN0IFlvcmtzaGlyZTEYMBYGA1UEChMPU2VjdGlnbyBMaW1pdGVkMTAwLgYD
 # VQQDEydTZWN0aWdvIFB1YmxpYyBUaW1lIFN0YW1waW5nIFNpZ25lciBSMzagghME
 # MIIGYjCCBMqgAwIBAgIRAKQpO24e3denNAiHrXpOtyQwDQYJKoZIhvcNAQEMBQAw
@@ -1125,8 +1175,8 @@ do {
 # MRgwFgYDVQQKEw9TZWN0aWdvIExpbWl0ZWQxLDAqBgNVBAMTI1NlY3RpZ28gUHVi
 # bGljIFRpbWUgU3RhbXBpbmcgQ0EgUjM2AhEApCk7bh7d16c0CIetek63JDANBglg
 # hkgBZQMEAgIFAKCCAfkwGgYJKoZIhvcNAQkDMQ0GCyqGSIb3DQEJEAEEMBwGCSqG
-# SIb3DQEJBTEPFw0yNTA3MDkxNDIwMTBaMD8GCSqGSIb3DQEJBDEyBDDzBcrNqvnI
-# vOHzBj5g/dPiOflok7GjSBjo7O03YXsfQiCLPPJlhVBFGXHDKT7mMNMwggF6Bgsq
+# SIb3DQEJBTEPFw0yNTA3MDkxNjM3NTZaMD8GCSqGSIb3DQEJBDEyBDAjM1e8nhr5
+# K39pKlFyGv8SvhcUdGhCacLwZxTI1Tki5ci4PyzLwZt+w9ujZz3zzIAwggF6Bgsq
 # hkiG9w0BCRACDDGCAWkwggFlMIIBYTAWBBQ4yRSBEES03GY+k9R0S4FBhqm1sTCB
 # hwQUxq5U5HiG8Xw9VRJIjGnDSnr5wt0wbzBbpFkwVzELMAkGA1UEBhMCR0IxGDAW
 # BgNVBAoTD1NlY3RpZ28gTGltaXRlZDEuMCwGA1UEAxMlU2VjdGlnbyBQdWJsaWMg
@@ -1135,15 +1185,15 @@ do {
 # VQQIEwpOZXcgSmVyc2V5MRQwEgYDVQQHEwtKZXJzZXkgQ2l0eTEeMBwGA1UEChMV
 # VGhlIFVTRVJUUlVTVCBOZXR3b3JrMS4wLAYDVQQDEyVVU0VSVHJ1c3QgUlNBIENl
 # cnRpZmljYXRpb24gQXV0aG9yaXR5AhA2wrC9fBs656Oz3TbLyXVoMA0GCSqGSIb3
-# DQEBAQUABIICADlhBw+RwTt2dWc/6vY38XkWPSWQ1809EA7Prutxy03MO4Q+X0kJ
-# xxM8NIF+NTv7YGSJ8b8kIHOaDo9v7WS+ftNnDhJNNe/OvDhpBvfNbDJAS/XpuwhA
-# DQgMjqaMDBVYf4SljRyqRwR+i8Ti0oJTzyJyvemrBr1KSeEP4cSmL3OUiP7V7E0B
-# p3pEbZiQ/TsWEzKDJMAvudCy4bQMQguM5kRE8sg+5gAaknUDBJds3m32UQDUBT2U
-# wp+4ep5IhZNjw/tBek54vM4rXG4QI96UviclxjpHeLm22CJ+hARcW8LxzfA4/+3q
-# M78smYvx1vWxq72uotGnuVFFr7YnlP6mQecQUESuPhOuXW8GbQVbWjpOx2/LLC1z
-# QCHmhceQ+xA3QNbTBPRSNXbYt/utRsB1JBCSBCQaQaORfLVBI6FTrX0yCRFZWBk4
-# fVNIRaIvZxudL0qCa3mynb7m2MdFmx4r+LeLIW0RZRKjogSrTNOHNZIG4tZbBAJC
-# lT+mv+tx3g6VSoeQSiUR+9VAamq1cAEkGspc5tXpiHSkpblEZpMYAfj/pMSggnXi
-# nyKlG+hZftg3EgLeh93zjuZ5r9Pp9u5WvPPzYM4B//4hjOsE/dlLKMTfY1IJWcIT
-# U/xtTMZV8nk+DP8ONpqsZQGsHu92JQcXLm5Ov5eG0pokLeMZlRU8SntN
+# DQEBAQUABIICACOcZZhtnha1H7/XOgV93rkfKvmFYfJ8bUva3m5LInAjS2+6L4FY
+# EHvj0T+NNqnJPfXN7YmPEaaiv1d0U2hwiAGAEc8SJxtMFsc+rJEsSaaX5tY8xa09
+# lG+HiiNAUJxYET/crPASAdiwg8bNcb/oMUQNsJywl1lubGmdMAcBby4flTtLP6Fl
+# wrtabMUUxvqBcMPhFNxClxzIGzaAQn4yUKjQjPO9RrYFiu2WXx6nc2oUdMw0I9/3
+# eQvJmQqx5ImoHdLVLIbeSmqsyL01sVBz8PRjhIlrSRoctyG2HwZmp6t/WLB0pr4C
+# 6fHbo98ayiMLCVfYW8bxs+7XI3n4+Gg6bQDA/bZQArljultzDGhU6qoSlwrjuMHk
+# ZOhZGB0C2q3N3SduL1h8/EZ+R8G/v/Pb275P3oupBbO+91z5qPm3ofvk3nrA/7Cm
+# TJqdtMS3dGojNbJMrpg/TjEwaueL84bWc76P3xMAR55gYpHDqT2MMuAeHElVPfuN
+# /Lm6fR2ajmLboa5QmKM5GL72xHJK4XVsJWIK7OnDh33wygKUTbmqLZdk1zgW0gC2
+# fDOdXGgpA4CyRBq0UM1WuEsBsaU1tR9fQqhv/orygY6VlDyJcwfA6sR1TRHSIAP2
+# dH8spMIauJTPMJsfz3pRUC1Lps2CpppVwAJdHj7H7ffuU/dFBsEgj1mJ
 # SIG # End signature block
