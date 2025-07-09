@@ -83,18 +83,18 @@ function RunScheduledTask {
         Write-Host "  Task Name: $taskName" -ForegroundColor Gray
         
         $task = Get-ScheduledTask -TaskPath $taskPath -TaskName $taskName -ErrorAction Stop
-        Write-Host "✓ Task found: $($task.TaskName)" -ForegroundColor Green
+        Write-Host "[+] Task found: $($task.TaskName)" -ForegroundColor Green
         Write-Host "  Full Path: $($task.TaskPath)$($task.TaskName)" -ForegroundColor Gray
         Write-Host "  Current State: $($task.State)" -ForegroundColor Gray
         
         # Check if task is already running
         if ($task.State -eq 'Running') {
-            Write-Host "⚠ Task is already running. Waiting for it to complete..." -ForegroundColor Yellow
+            Write-Host "[!] Task is already running. Waiting for it to complete..." -ForegroundColor Yellow
         } else {
             # Start the scheduled task using separate path and name
             Write-Host "Starting scheduled task..." -ForegroundColor Cyan
             Start-ScheduledTask -TaskPath $taskPath -TaskName $taskName
-            Write-Host "✓ Task started successfully" -ForegroundColor Green
+            Write-Host "[+] Task started successfully" -ForegroundColor Green
         }
         
         Write-Host "Monitoring task progress..." -ForegroundColor Yellow
@@ -114,14 +114,14 @@ function RunScheduledTask {
             
             # Check for timeout
             if ($elapsed -ge $timeout) {
-                Write-Host "⚠ Task timeout reached ($timeout seconds). Task may still be running." -ForegroundColor Yellow
+                Write-Host "[!] Task timeout reached ($timeout seconds). Task may still be running." -ForegroundColor Yellow
                 break
             }
             
         } while ($taskState -ne 'Ready')
         
         if ($taskState -eq 'Ready') {
-            Write-Host "✓ Scheduled task completed." -ForegroundColor Green
+            Write-Host "[+] Scheduled task completed." -ForegroundColor Green
             
             # Check the last run result using separate path and name
             Write-Host "Checking task execution results..." -ForegroundColor Cyan
@@ -133,12 +133,12 @@ function RunScheduledTask {
             Write-Host "  Next Run Time: $($taskInfo.NextRunTime)" -ForegroundColor Gray
             
             if ($taskInfo.LastTaskResult -eq 0) {
-                Write-Host "✓ Task completed successfully (Result: $($taskInfo.LastTaskResult))" -ForegroundColor Green
-                Write-Host "✓ Secure Boot certificate update process completed" -ForegroundColor Green
+                Write-Host "[+] Task completed successfully (Result: $($taskInfo.LastTaskResult))" -ForegroundColor Green
+                Write-Host "[+] Secure Boot certificate update process completed" -ForegroundColor Green
             } elseif ($taskInfo.LastTaskResult -eq 267011) {
-                Write-Host "⚠ Task completed with result: $($taskInfo.LastTaskResult) (Task was terminated)" -ForegroundColor Yellow
+                Write-Host "[!] Task completed with result: $($taskInfo.LastTaskResult) (Task was terminated)" -ForegroundColor Yellow
             } else {
-                Write-Host "⚠ Task completed with result code: $($taskInfo.LastTaskResult)" -ForegroundColor Yellow
+                Write-Host "[!] Task completed with result code: $($taskInfo.LastTaskResult)" -ForegroundColor Yellow
                 Write-Host "  This may indicate an issue with the certificate update process" -ForegroundColor Yellow
             }
         }
@@ -350,13 +350,13 @@ function Get-DetailedCertificateInfo {
             # Check for legacy KEK certificate
             if ($kekString -match 'Microsoft Corporation KEK CA 2011') {
                 $results.KEK_Legacy_Found = $true
-                Write-Host "  ✓ Found: Microsoft Corporation KEK CA 2011 (expires June 2026)" -ForegroundColor Yellow
+                Write-Host "  [+] Found: Microsoft Corporation KEK CA 2011 (expires June 2026)" -ForegroundColor Yellow
             }
             
             # Check for updated KEK certificate
             if ($kekString -match 'Microsoft Corporation KEK CA 2023') {
                 $results.KEK_Updated_Found = $true
-                Write-Host "  ✓ Found: Microsoft Corporation KEK CA 2023 (updated certificate)" -ForegroundColor Green
+                Write-Host "  [+] Found: Microsoft Corporation KEK CA 2023 (updated certificate)" -ForegroundColor Green
             }
             
             $results.KEK_Status = if ($results.KEK_Updated_Found) { "Updated" } elseif ($results.KEK_Legacy_Found) { "Legacy - Update Required" } else { "Unknown" }
@@ -376,29 +376,29 @@ function Get-DetailedCertificateInfo {
             # Check for legacy UEFI certificates
             if ($dbString -match 'Microsoft Corporation UEFI CA 2011') {
                 $results.DB_UEFI_Legacy_Found = $true
-                Write-Host "  ✓ Found: Microsoft Corporation UEFI CA 2011 (expires June 2026)" -ForegroundColor Yellow
+                Write-Host "  [+] Found: Microsoft Corporation UEFI CA 2011 (expires June 2026)" -ForegroundColor Yellow
             }
             
             # Check for updated UEFI certificates
             if ($dbString -match 'Microsoft Corporation UEFI CA 2023') {
                 $results.DB_UEFI_Updated_Found = $true
-                Write-Host "  ✓ Found: Microsoft Corporation UEFI CA 2023 (updated certificate)" -ForegroundColor Green
+                Write-Host "  [+] Found: Microsoft Corporation UEFI CA 2023 (updated certificate)" -ForegroundColor Green
             }
             
             if ($dbString -match 'Microsoft Option ROM UEFI CA 2023') {
-                Write-Host "  ✓ Found: Microsoft Option ROM UEFI CA 2023 (updated certificate)" -ForegroundColor Green
+                Write-Host "  [+] Found: Microsoft Option ROM UEFI CA 2023 (updated certificate)" -ForegroundColor Green
             }
             
             # Check for legacy Windows certificates
             if ($dbString -match 'Microsoft Windows Production PCA 2011') {
                 $results.DB_Windows_Legacy_Found = $true
-                Write-Host "  ✓ Found: Microsoft Windows Production PCA 2011 (expires October 2026)" -ForegroundColor Yellow
+                Write-Host "  [+] Found: Microsoft Windows Production PCA 2011 (expires October 2026)" -ForegroundColor Yellow
             }
             
             # Check for updated Windows certificates
             if ($dbString -match 'Windows UEFI CA 2023') {
                 $results.DB_Windows_Updated_Found = $true
-                Write-Host "  ✓ Found: Windows UEFI CA 2023 (updated certificate)" -ForegroundColor Green
+                Write-Host "  [+] Found: Windows UEFI CA 2023 (updated certificate)" -ForegroundColor Green
             }
             
             $results.DB_UEFI_Status = if ($results.DB_UEFI_Updated_Found) { "Updated" } elseif ($results.DB_UEFI_Legacy_Found) { "Legacy - Update Required" } else { "Unknown" }
@@ -608,8 +608,8 @@ function Show-CertificateOverview {
         }
         
         $statusSymbol = switch ($cert.Status) {
-            "Updated" { "✓" }
-            "Legacy - Update Required" { "⚠" }
+            "Updated" { "[+]" }
+            "Legacy - Update Required" { "[!]" }
             "Not Found" { "?" }
             default { "✗" }
         }
@@ -623,9 +623,9 @@ function Show-CertificateOverview {
     Write-Host "Recommendations:" -ForegroundColor Yellow
     Write-Host "================================================================" -ForegroundColor Gray
     if ($certInfo.OverallStatus -eq "Fully Updated") {
-        Write-Host "✓ All certificates are up to date. No action required." -ForegroundColor Green
+        Write-Host "[+] All certificates are up to date. No action required." -ForegroundColor Green
     } elseif ($certInfo.OverallStatus -eq "Partial Update - Action Required") {
-        Write-Host "⚠ Some certificates need updating. Use the update process (options 6-9) to complete the update." -ForegroundColor Yellow
+        Write-Host "[!] Some certificates need updating. Use the update process (options 6-9) to complete the update." -ForegroundColor Yellow
     } else {
         Write-Host "? Status unclear. Ensure Secure Boot is enabled and run the update process." -ForegroundColor Gray
     }
@@ -681,18 +681,18 @@ function Show-SecureBootTasks {
                 $_.TaskName -eq $expectedTaskName -and $_.TaskPath -eq $expectedTaskPath 
             }
             if ($mainTask) {
-                Write-Host "✓ Main Secure Boot update task found and available" -ForegroundColor Green
+                Write-Host "[+] Main Secure Boot update task found and available" -ForegroundColor Green
                 Write-Host "  Expected Path: $expectedTaskPath" -ForegroundColor Gray
                 Write-Host "  Expected Name: $expectedTaskName" -ForegroundColor Gray
                 if ($mainTask.State -eq 'Ready') {
-                    Write-Host "✓ Task is ready to run" -ForegroundColor Green
+                    Write-Host "[+] Task is ready to run" -ForegroundColor Green
                 } elseif ($mainTask.State -eq 'Running') {
-                    Write-Host "⚠ Task is currently running" -ForegroundColor Yellow
+                    Write-Host "[!] Task is currently running" -ForegroundColor Yellow
                 } else {
-                    Write-Host "⚠ Task state: $($mainTask.State)" -ForegroundColor Yellow
+                    Write-Host "[!] Task state: $($mainTask.State)" -ForegroundColor Yellow
                 }
             } else {
-                Write-Host "⚠ Main 'Secure-Boot-Update' task not found at expected location" -ForegroundColor Yellow
+                Write-Host "[!] Main 'Secure-Boot-Update' task not found at expected location" -ForegroundColor Yellow
                 Write-Host "  Expected: $expectedTaskPath$expectedTaskName" -ForegroundColor Gray
                 
                 # Check if a similar task exists with different path/name
@@ -703,7 +703,7 @@ function Show-SecureBootTasks {
             }
             
         } else {
-            Write-Host "⚠ No Secure Boot related scheduled tasks found" -ForegroundColor Yellow
+            Write-Host "[!] No Secure Boot related scheduled tasks found" -ForegroundColor Yellow
             Write-Host "This may indicate:" -ForegroundColor Gray
             Write-Host "  - System doesn't support Secure Boot certificate updates" -ForegroundColor Gray
             Write-Host "  - Windows updates haven't created the tasks yet" -ForegroundColor Gray
@@ -715,7 +715,7 @@ function Show-SecureBootTasks {
         Write-Host "Direct task check:" -ForegroundColor Cyan
         try {
             $directTask = Get-ScheduledTask -TaskPath $expectedTaskPath -TaskName $expectedTaskName -ErrorAction Stop
-            Write-Host "✓ Direct access successful: $($directTask.TaskPath)$($directTask.TaskName)" -ForegroundColor Green
+            Write-Host "[+] Direct access successful: $($directTask.TaskPath)$($directTask.TaskName)" -ForegroundColor Green
             Write-Host "  State: $($directTask.State)" -ForegroundColor Green
         } catch {
             Write-Host "✗ Direct access failed: Task not found at $expectedTaskPath$expectedTaskName" -ForegroundColor Red
@@ -833,12 +833,12 @@ do {
                 switch ($certInfo.OverallStatus) {
                     "Fully Updated" { 
                         Write-Host $certInfo.OverallStatus -ForegroundColor Green 
-                        Write-Host "✓ All certificates have been successfully updated" -ForegroundColor Green
-                        Write-Host "✓ Your system is prepared for the June 2026 certificate expiration" -ForegroundColor Green
+                        Write-Host "[+] All certificates have been successfully updated" -ForegroundColor Green
+                        Write-Host "[+] Your system is prepared for the June 2026 certificate expiration" -ForegroundColor Green
                     }
                     "Partial Update - Action Required" { 
                         Write-Host $certInfo.OverallStatus -ForegroundColor Yellow 
-                        Write-Host "⚠ Some certificates still need updating - please retry the update process" -ForegroundColor Yellow
+                        Write-Host "[!] Some certificates still need updating - please retry the update process" -ForegroundColor Yellow
                     }
                     "Status Unknown" { 
                         Write-Host $certInfo.OverallStatus -ForegroundColor Gray 
@@ -863,8 +863,8 @@ do {
                     }
                     
                     $statusSymbol = switch ($cert.Status) {
-                        "Updated" { "✓" }
-                        "Legacy - Update Required" { "⚠" }
+                        "Updated" { "[+]" }
+                        "Legacy - Update Required" { "[!]" }
                         "Not Found" { "?" }
                         default { "✗" }
                     }
@@ -898,10 +898,10 @@ do {
 
 } while ($choice -ne 11)
 # SIG # Begin signature block
-# MIIudQYJKoZIhvcNAQcCoIIuZjCCLmICAQExDzANBglghkgBZQMEAgEFADB5Bgor
+# MIIudgYJKoZIhvcNAQcCoIIuZzCCLmMCAQExDzANBglghkgBZQMEAgEFADB5Bgor
 # BgEEAYI3AgEEoGswaTA0BgorBgEEAYI3AgEeMCYCAwEAAAQQH8w7YFlLCE63JNLG
-# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCCC4W6GzFUiZBL8
-# kCKqjz9PQmXfZ4QmE00NsRENqdgGraCCEd8wggVvMIIEV6ADAgECAhBI/JO0YFWU
+# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCA+3bd7h9Gt64Yk
+# 06jW9My0S2W3sts3OCqw+UFZHMlEAqCCEd8wggVvMIIEV6ADAgECAhBI/JO0YFWU
 # jTanyYqJ1pQWMA0GCSqGSIb3DQEBDAUAMHsxCzAJBgNVBAYTAkdCMRswGQYDVQQI
 # DBJHcmVhdGVyIE1hbmNoZXN0ZXIxEDAOBgNVBAcMB1NhbGZvcmQxGjAYBgNVBAoM
 # EUNvbW9kbyBDQSBMaW1pdGVkMSEwHwYDVQQDDBhBQUEgQ2VydGlmaWNhdGUgU2Vy
@@ -996,154 +996,154 @@ do {
 # MA62TOXQJrK+x9DtVY8QCb+IUZNYj6lNiXno3t69JN6FvIU2EtPrKs8SBV2uDZQM
 # ecNJ+3w77/EHod82uB73vGiOvX8Q2CkdMunz+VfXyY4Oh10AEnCqzl0UV2HHH66H
 # sa8Zti+kXWH9HTUkDJCd2VHdDEOJ0o2kA1/SfETMPAO/yeFz1xXy6CIJ50dkfzuY
-# gf9SsIAod1Dx9THs2qkXIwyf5lTJBvPHLRqxs/k+Mn70AUiyj50/JYMxghvsMIIb
-# 6AIBATBoMFQxCzAJBgNVBAYTAkdCMRgwFgYDVQQKEw9TZWN0aWdvIExpbWl0ZWQx
+# gf9SsIAod1Dx9THs2qkXIwyf5lTJBvPHLRqxs/k+Mn70AUiyj50/JYMxghvtMIIb
+# 6QIBATBoMFQxCzAJBgNVBAYTAkdCMRgwFgYDVQQKEw9TZWN0aWdvIExpbWl0ZWQx
 # KzApBgNVBAMTIlNlY3RpZ28gUHVibGljIENvZGUgU2lnbmluZyBDQSBSMzYCEBHh
 # oIZkh66CYIKNKPBResYwDQYJYIZIAWUDBAIBBQCgfDAQBgorBgEEAYI3AgEMMQIw
 # ADAZBgkqhkiG9w0BCQMxDAYKKwYBBAGCNwIBBDAcBgorBgEEAYI3AgELMQ4wDAYK
-# KwYBBAGCNwIBFTAvBgkqhkiG9w0BCQQxIgQg8P6dxbv7SYK511JGViU4g8pgkqCt
-# VC2uxxAQY6rJcOwwDQYJKoZIhvcNAQEBBQAEggIAsS2H+fpMaSFVVPizky0kVQ0c
-# KPlQdUINgQGCe5ZxVCZI53rnfJ/FHLd0oBxAUjRVKCefugPWWyLNsEhUjRYmZ516
-# eeIKYokM+D4+wMzWXfh3T6uXhVOYiUpDjCdh40c1wKhskl2ynn6aAVxKP2SNdcQc
-# 56RBHx834VpKmi2G26ZH7tVA2dbH2ltZOdNL+moT0z5THTBwbpzagYbkGE9rpuLf
-# CPYNJgydtF2lzM/ctufaV147/AaJrgrgugUhQ1MMS5Xz3B4IXXU/OulDp6m1sHQC
-# TzOx7BAXV2IOla12miqYW8IlW/CxnnBoca/4TtIPoZ7ynA+v3O79xICMZuretjms
-# nz9uWjm8me7WS1Mf44Xua4H322dht6NJaC6be7FZuYCs/UMk/lCd35NeX8iYqlnu
-# NkeBFT2G/lFNVYaXpEJPdrqv5uyrlR8AedrWKHrYPnLD+DHx279A5GjezDKgZ27s
-# IE3MghRhhCI4nMBuZUwh6941wlxlC1yzGobZAe3AfQk4nthEsT5TgQm2G55EgRvT
-# S3DGPNIZ0PLXr97q3sqX/OXmSyhrOSXInK2n/c8/77RoYJrQp8+zJojOeIXukjtp
-# Auwvl0DEP7Brvf6z8uYPJmH2ylyNIqM+A23xEEUL4Mdvwp6AIbw5tZ2F+KVrP+pM
-# 6D/N0k6aJrAVvwnzgPGhghjXMIIY0wYKKwYBBAGCNwMDATGCGMMwghi/BgkqhkiG
-# 9w0BBwKgghiwMIIYrAIBAzEPMA0GCWCGSAFlAwQCAgUAMIH3BgsqhkiG9w0BCRAB
-# BKCB5wSB5DCB4QIBAQYKKwYBBAGyMQIBATAxMA0GCWCGSAFlAwQCAQUABCAf99ih
-# szHCa/YEYTGtVMxtkgwS43Cwv47Aa1GCZuaH4gIUIUX9J0jSY4iTSI1LrejmIoLz
-# Z+cYDzIwMjUwNzA5MTQxNTIxWqB2pHQwcjELMAkGA1UEBhMCR0IxFzAVBgNVBAgT
-# Dldlc3QgWW9ya3NoaXJlMRgwFgYDVQQKEw9TZWN0aWdvIExpbWl0ZWQxMDAuBgNV
-# BAMTJ1NlY3RpZ28gUHVibGljIFRpbWUgU3RhbXBpbmcgU2lnbmVyIFIzNqCCEwQw
-# ggZiMIIEyqADAgECAhEApCk7bh7d16c0CIetek63JDANBgkqhkiG9w0BAQwFADBV
-# MQswCQYDVQQGEwJHQjEYMBYGA1UEChMPU2VjdGlnbyBMaW1pdGVkMSwwKgYDVQQD
-# EyNTZWN0aWdvIFB1YmxpYyBUaW1lIFN0YW1waW5nIENBIFIzNjAeFw0yNTAzMjcw
-# MDAwMDBaFw0zNjAzMjEyMzU5NTlaMHIxCzAJBgNVBAYTAkdCMRcwFQYDVQQIEw5X
-# ZXN0IFlvcmtzaGlyZTEYMBYGA1UEChMPU2VjdGlnbyBMaW1pdGVkMTAwLgYDVQQD
-# EydTZWN0aWdvIFB1YmxpYyBUaW1lIFN0YW1waW5nIFNpZ25lciBSMzYwggIiMA0G
-# CSqGSIb3DQEBAQUAA4ICDwAwggIKAoICAQDThJX0bqRTePI9EEt4Egc83JSBU2dh
-# rJ+wY7JgReuff5KQNhMuzVytzD+iXazATVPMHZpH/kkiMo1/vlAGFrYN2P7g0Q8o
-# PEcR3h0SftFNYxxMh+bj3ZNbbYjwt8f4DsSHPT+xp9zoFuw0HOMdO3sWeA1+F8mh
-# g6uS6BJpPwXQjNSHpVTCgd1gOmKWf12HSfSbnjl3kDm0kP3aIUAhsodBYZsJA1im
-# WqkAVqwcGfvs6pbfs/0GE4BJ2aOnciKNiIV1wDRZAh7rS/O+uTQcb6JVzBVmPP63
-# k5xcZNzGo4DOTV+sM1nVrDycWEYS8bSS0lCSeclkTcPjQah9Xs7xbOBoCdmahSfg
-# 8Km8ffq8PhdoAXYKOI+wlaJj+PbEuwm6rHcm24jhqQfQyYbOUFTKWFe901VdyMC4
-# gRwRAq04FH2VTjBdCkhKts5Py7H73obMGrxN1uGgVyZho4FkqXA8/uk6nkzPH9Qy
-# HIED3c9CGIJ098hU4Ig2xRjhTbengoncXUeo/cfpKXDeUcAKcuKUYRNdGDlf8Wnw
-# byqUblj4zj1kQZSnZud5EtmjIdPLKce8UhKl5+EEJXQp1Fkc9y5Ivk4AZacGMCVG
-# 0e+wwGsjcAADRO7Wga89r/jJ56IDK773LdIsL3yANVvJKdeeS6OOEiH6hpq2yT+j
-# J/lHa9zEdqFqMwIDAQABo4IBjjCCAYowHwYDVR0jBBgwFoAUX1jtTDF6omFCjVKA
-# urNhlxmiMpswHQYDVR0OBBYEFIhhjKEqN2SBKGChmzHQjP0sAs5PMA4GA1UdDwEB
-# /wQEAwIGwDAMBgNVHRMBAf8EAjAAMBYGA1UdJQEB/wQMMAoGCCsGAQUFBwMIMEoG
-# A1UdIARDMEEwNQYMKwYBBAGyMQECAQMIMCUwIwYIKwYBBQUHAgEWF2h0dHBzOi8v
-# c2VjdGlnby5jb20vQ1BTMAgGBmeBDAEEAjBKBgNVHR8EQzBBMD+gPaA7hjlodHRw
-# Oi8vY3JsLnNlY3RpZ28uY29tL1NlY3RpZ29QdWJsaWNUaW1lU3RhbXBpbmdDQVIz
-# Ni5jcmwwegYIKwYBBQUHAQEEbjBsMEUGCCsGAQUFBzAChjlodHRwOi8vY3J0LnNl
-# Y3RpZ28uY29tL1NlY3RpZ29QdWJsaWNUaW1lU3RhbXBpbmdDQVIzNi5jcnQwIwYI
-# KwYBBQUHMAGGF2h0dHA6Ly9vY3NwLnNlY3RpZ28uY29tMA0GCSqGSIb3DQEBDAUA
-# A4IBgQACgT6khnJRIfllqS49Uorh5ZvMSxNEk4SNsi7qvu+bNdcuknHgXIaZyqcV
-# mhrV3PHcmtQKt0blv/8t8DE4bL0+H0m2tgKElpUeu6wOH02BjCIYM6HLInbNHLf6
-# R2qHC1SUsJ02MWNqRNIT6GQL0Xm3LW7E6hDZmR8jlYzhZcDdkdw0cHhXjbOLsmTe
-# S0SeRJ1WJXEzqt25dbSOaaK7vVmkEVkOHsp16ez49Bc+Ayq/Oh2BAkSTFog43ldE
-# KgHEDBbCIyba2E8O5lPNan+BQXOLuLMKYS3ikTcp/Qw63dxyDCfgqXYUhxBpXnme
-# SO/WA4NwdwP35lWNhmjIpNVZvhWoxDL+PxDdpph3+M5DroWGTc1ZuDa1iXmOFAK4
-# iwTnlWDg3QNRsRa9cnG3FBBpVHnHOEQj4GMkrOHdNDTbonEeGvZ+4nSZXrwCW4Wv
-# 2qyGDBLlKk3kUW1pIScDCpm/chL6aUbnSsrtbepdtbCLiGanKVR/KC1gsR0tC6Q0
-# RfWOI4owggYUMIID/KADAgECAhB6I67aU2mWD5HIPlz0x+M/MA0GCSqGSIb3DQEB
-# DAUAMFcxCzAJBgNVBAYTAkdCMRgwFgYDVQQKEw9TZWN0aWdvIExpbWl0ZWQxLjAs
-# BgNVBAMTJVNlY3RpZ28gUHVibGljIFRpbWUgU3RhbXBpbmcgUm9vdCBSNDYwHhcN
-# MjEwMzIyMDAwMDAwWhcNMzYwMzIxMjM1OTU5WjBVMQswCQYDVQQGEwJHQjEYMBYG
-# A1UEChMPU2VjdGlnbyBMaW1pdGVkMSwwKgYDVQQDEyNTZWN0aWdvIFB1YmxpYyBU
-# aW1lIFN0YW1waW5nIENBIFIzNjCCAaIwDQYJKoZIhvcNAQEBBQADggGPADCCAYoC
-# ggGBAM2Y2ENBq26CK+z2M34mNOSJjNPvIhKAVD7vJq+MDoGD46IiM+b83+3ecLvB
-# hStSVjeYXIjfa3ajoW3cS3ElcJzkyZlBnwDEJuHlzpbN4kMH2qRBVrjrGJgSlzzU
-# qcGQBaCxpectRGhhnOSwcjPMI3G0hedv2eNmGiUbD12OeORN0ADzdpsQ4dDi6M4Y
-# hoGE9cbY11XxM2AVZn0GiOUC9+XE0wI7CQKfOUfigLDn7i/WeyxZ43XLj5GVo7LD
-# BExSLnh+va8WxTlA+uBvq1KO8RSHUQLgzb1gbL9Ihgzxmkdp2ZWNuLc+XyEmJNbD
-# 2OIIq/fWlwBp6KNL19zpHsODLIsgZ+WZ1AzCs1HEK6VWrxmnKyJJg2Lv23DlEdZl
-# QSGdF+z+Gyn9/CRezKe7WNyxRf4e4bwUtrYE2F5Q+05yDD68clwnweckKtxRaF0V
-# zN/w76kOLIaFVhf5sMM/caEZLtOYqYadtn034ykSFaZuIBU9uCSrKRKTPJhWvXk4
-# CllgrwIDAQABo4IBXDCCAVgwHwYDVR0jBBgwFoAU9ndq3T/9ARP/FqFsggIv0Ao9
-# FCUwHQYDVR0OBBYEFF9Y7UwxeqJhQo1SgLqzYZcZojKbMA4GA1UdDwEB/wQEAwIB
-# hjASBgNVHRMBAf8ECDAGAQH/AgEAMBMGA1UdJQQMMAoGCCsGAQUFBwMIMBEGA1Ud
-# IAQKMAgwBgYEVR0gADBMBgNVHR8ERTBDMEGgP6A9hjtodHRwOi8vY3JsLnNlY3Rp
-# Z28uY29tL1NlY3RpZ29QdWJsaWNUaW1lU3RhbXBpbmdSb290UjQ2LmNybDB8Bggr
-# BgEFBQcBAQRwMG4wRwYIKwYBBQUHMAKGO2h0dHA6Ly9jcnQuc2VjdGlnby5jb20v
-# U2VjdGlnb1B1YmxpY1RpbWVTdGFtcGluZ1Jvb3RSNDYucDdjMCMGCCsGAQUFBzAB
-# hhdodHRwOi8vb2NzcC5zZWN0aWdvLmNvbTANBgkqhkiG9w0BAQwFAAOCAgEAEtd7
-# IK0ONVgMnoEdJVj9TC1ndK/HYiYh9lVUacahRoZ2W2hfiEOyQExnHk1jkvpIJzAM
-# xmEc6ZvIyHI5UkPCbXKspioYMdbOnBWQUn733qMooBfIghpR/klUqNxx6/fDXqY0
-# hSU1OSkkSivt51UlmJElUICZYBodzD3M/SFjeCP59anwxs6hwj1mfvzG+b1coYGn
-# qsSz2wSKr+nDO+Db8qNcTbJZRAiSazr7KyUJGo1c+MScGfG5QHV+bps8BX5Oyv9C
-# t36Y4Il6ajTqV2ifikkVtB3RNBUgwu/mSiSUice/Jp/q8BMk/gN8+0rNIE+QqU63
-# JoVMCMPY2752LmESsRVVoypJVt8/N3qQ1c6FibbcRabo3azZkcIdWGVSAdoLgAIx
-# EKBeNh9AQO1gQrnh1TA8ldXuJzPSuALOz1Ujb0PCyNVkWk7hkhVHfcvBfI8NtgWQ
-# upiaAeNHe0pWSGH2opXZYKYG4Lbukg7HpNi/KqJhue2Keak6qH9A8CeEOB7Eob0Z
-# f+fU+CCQaL0cJqlmnx9HCDxF+3BLbUufrV64EbTI40zqegPZdA+sXCmbcZy6okx/
-# SjwsusWRItFA3DE8MORZeFb6BmzBtqKJ7l939bbKBy2jvxcJI98Va95Q5JnlKor3
-# m0E7xpMeYRriWklUPsetMSf2NvUQa/E5vVyefQIwggaCMIIEaqADAgECAhA2wrC9
-# fBs656Oz3TbLyXVoMA0GCSqGSIb3DQEBDAUAMIGIMQswCQYDVQQGEwJVUzETMBEG
-# A1UECBMKTmV3IEplcnNleTEUMBIGA1UEBxMLSmVyc2V5IENpdHkxHjAcBgNVBAoT
-# FVRoZSBVU0VSVFJVU1QgTmV0d29yazEuMCwGA1UEAxMlVVNFUlRydXN0IFJTQSBD
-# ZXJ0aWZpY2F0aW9uIEF1dGhvcml0eTAeFw0yMTAzMjIwMDAwMDBaFw0zODAxMTgy
-# MzU5NTlaMFcxCzAJBgNVBAYTAkdCMRgwFgYDVQQKEw9TZWN0aWdvIExpbWl0ZWQx
-# LjAsBgNVBAMTJVNlY3RpZ28gUHVibGljIFRpbWUgU3RhbXBpbmcgUm9vdCBSNDYw
-# ggIiMA0GCSqGSIb3DQEBAQUAA4ICDwAwggIKAoICAQCIndi5RWedHd3ouSaBmlRU
-# wHxJBZvMWhUP2ZQQRLRBQIF3FJmp1OR2LMgIU14g0JIlL6VXWKmdbmKGRDILRxEt
-# ZdQnOh2qmcxGzjqemIk8et8sE6J+N+Gl1cnZocew8eCAawKLu4TRrCoqCAT8uRjD
-# eypoGJrruH/drCio28aqIVEn45NZiZQI7YYBex48eL78lQ0BrHeSmqy1uXe9xN04
-# aG0pKG9ki+PC6VEfzutu6Q3IcZZfm00r9YAEp/4aeiLhyaKxLuhKKaAdQjRaf/h6
-# U13jQEV1JnUTCm511n5avv4N+jSVwd+Wb8UMOs4netapq5Q/yGyiQOgjsP/JRUj0
-# MAT9YrcmXcLgsrAimfWY3MzKm1HCxcquinTqbs1Q0d2VMMQyi9cAgMYC9jKc+3mW
-# 62/yVl4jnDcw6ULJsBkOkrcPLUwqj7poS0T2+2JMzPP+jZ1h90/QpZnBkhdtixMi
-# WDVgh60KmLmzXiqJc6lGwqoUqpq/1HVHm+Pc2B6+wCy/GwCcjw5rmzajLbmqGygE
-# gaj/OLoanEWP6Y52Hflef3XLvYnhEY4kSirMQhtberRvaI+5YsD3XVxHGBjlIli5
-# u+NrLedIxsE88WzKXqZjj9Zi5ybJL2WjeXuOTbswB7XjkZbErg7ebeAQUQiS/uRG
-# Z58NHs57ZPUfECcgJC+v2wIDAQABo4IBFjCCARIwHwYDVR0jBBgwFoAUU3m/Wqor
-# Ss9UgOHYm8Cd8rIDZsswHQYDVR0OBBYEFPZ3at0//QET/xahbIICL9AKPRQlMA4G
-# A1UdDwEB/wQEAwIBhjAPBgNVHRMBAf8EBTADAQH/MBMGA1UdJQQMMAoGCCsGAQUF
-# BwMIMBEGA1UdIAQKMAgwBgYEVR0gADBQBgNVHR8ESTBHMEWgQ6BBhj9odHRwOi8v
-# Y3JsLnVzZXJ0cnVzdC5jb20vVVNFUlRydXN0UlNBQ2VydGlmaWNhdGlvbkF1dGhv
-# cml0eS5jcmwwNQYIKwYBBQUHAQEEKTAnMCUGCCsGAQUFBzABhhlodHRwOi8vb2Nz
-# cC51c2VydHJ1c3QuY29tMA0GCSqGSIb3DQEBDAUAA4ICAQAOvmVB7WhEuOWhxdQR
-# h+S3OyWM637ayBeR7djxQ8SihTnLf2sABFoB0DFR6JfWS0snf6WDG2gtCGflwVvc
-# YXZJJlFfym1Doi+4PfDP8s0cqlDmdfyGOwMtGGzJ4iImyaz3IBae91g50QyrVbrU
-# oT0mUGQHbRcF57olpfHhQEStz5i6hJvVLFV/ueQ21SM99zG4W2tB1ExGL98idX8C
-# hsTwbD/zIExAopoe3l6JrzJtPxj8V9rocAnLP2C8Q5wXVVZcbw4x4ztXLsGzqZIi
-# Rh5i111TW7HV1AtsQa6vXy633vCAbAOIaKcLAo/IU7sClyZUk62XD0VUnHD+YvVN
-# vIGezjM6CRpcWed/ODiptK+evDKPU2K6synimYBaNH49v9Ih24+eYXNtI38byt5k
-# Ivh+8aW88WThRpv8lUJKaPn37+YHYafob9Rg7LyTrSYpyZoBmwRWSE4W6iPjB7wJ
-# jJpH29308ZkpKKdpkiS9WNsf/eeUtvRrtIEiSJHN899L1P4l6zKVsdrUu1FX1T/u
-# bSrsxrYJD+3f3aKg6yxdbugot06YwGXXiy5UUGZvOu3lXlxA+fC13dQ5OlL2gIb5
-# lmF6Ii8+CQOYDwXM+yd9dbmocQsHjcRPsccUd5E9FiswEqORvz8g3s+jR3SFCgXh
-# N4wz7NgAnOgpCdUo4uDyllU9PzGCBJIwggSOAgEBMGowVTELMAkGA1UEBhMCR0Ix
-# GDAWBgNVBAoTD1NlY3RpZ28gTGltaXRlZDEsMCoGA1UEAxMjU2VjdGlnbyBQdWJs
-# aWMgVGltZSBTdGFtcGluZyBDQSBSMzYCEQCkKTtuHt3XpzQIh616TrckMA0GCWCG
-# SAFlAwQCAgUAoIIB+TAaBgkqhkiG9w0BCQMxDQYLKoZIhvcNAQkQAQQwHAYJKoZI
-# hvcNAQkFMQ8XDTI1MDcwOTE0MTUyMVowPwYJKoZIhvcNAQkEMTIEMNOjcsHXfGSJ
-# HcfQ+YC7T/nn1/99b6GMybIBviAZspiZioGj+naGbONoLDZNnnN5TzCCAXoGCyqG
-# SIb3DQEJEAIMMYIBaTCCAWUwggFhMBYEFDjJFIEQRLTcZj6T1HRLgUGGqbWxMIGH
-# BBTGrlTkeIbxfD1VEkiMacNKevnC3TBvMFukWTBXMQswCQYDVQQGEwJHQjEYMBYG
-# A1UEChMPU2VjdGlnbyBMaW1pdGVkMS4wLAYDVQQDEyVTZWN0aWdvIFB1YmxpYyBU
-# aW1lIFN0YW1waW5nIFJvb3QgUjQ2AhB6I67aU2mWD5HIPlz0x+M/MIG8BBSFPWMt
-# k4KCYXzQkDXEkd6SwULaxzCBozCBjqSBizCBiDELMAkGA1UEBhMCVVMxEzARBgNV
-# BAgTCk5ldyBKZXJzZXkxFDASBgNVBAcTC0plcnNleSBDaXR5MR4wHAYDVQQKExVU
-# aGUgVVNFUlRSVVNUIE5ldHdvcmsxLjAsBgNVBAMTJVVTRVJUcnVzdCBSU0EgQ2Vy
-# dGlmaWNhdGlvbiBBdXRob3JpdHkCEDbCsL18Gzrno7PdNsvJdWgwDQYJKoZIhvcN
-# AQEBBQAEggIAKW+eYn7vIEjazLDVZkjNwROVOwk0aG8KDTbNii1WBOAuvccXOeob
-# +pNIc9MABhmIjEvEhuW52KYqpjfH44E+tPyVTrvovIbOHTFK/T9u8I1ednAAxDAs
-# ztSHJfjQloKsdlqakCnDvde/k1tpe+uBNr35CQ3vJof5EKeP2/q+KlUx99leBeSO
-# k9XaBSDuBPRtDrncdarUwbldTPBR951b4aPkmK2ORTh5DjD2Ys/h0YEiXRoCXA3L
-# yP00KHMQCoXB5SmbGENnaAVoqZ7tHXzJh8jEOezPtjda/wUNeSigOI/rIGeZAOJP
-# xl++RxIWf17/VOHNys0FEE14u249hpS6asS5KObUypW7VDPHatr6P4YGilL76DCr
-# bcX2N/8zwJ8nfAQIE+Jcpa4xed5quGS2GYIoY7rwacrUYnfJcr7onl3uevv4I8gL
-# SXoJCJEqv2nGyYkZvoUqL67YxSRbszaQJQfd23aHOwRZjrzCvKniGST/OmsbS8s9
-# iwPTapjGF9Ycoh8Nojh2WtAycWDhGP7LrpUT6YJPg0VwjW1P10EN5PetHPaK4juf
-# i0QQlvXWa53vRIki2b4wVm72afeairZUZNqDoRxAVoKEwHXDh/3Qzird8Ux4rn3m
-# vnxq1KAu5pJCCdEII1bT/hrv4bPp7x2zzucd9b9UgQ+Ad0L7JAGuBZk=
+# KwYBBAGCNwIBFTAvBgkqhkiG9w0BCQQxIgQgDL5aDhOSf2/o0bhp2hrCmR0oX2OZ
+# JgOE7evNtdqWWAswDQYJKoZIhvcNAQEBBQAEggIAdw5Or80RtqSjw4guSojXDf3z
+# azKWdz9BMZX6qnjpVBt5YdoZt64Zp/GKVvOt7LMZMgYvQWFm1NZ6yxRpwCUp1tIj
+# CtArgxhkHczp5mDrYS3YRMEQsUkAE6IQ7xykbb+Un265t5LNfkEcv5ew46URpbQC
+# we5U4raiF3r76ebVkG0NjEsjlxyunnNDP2fXCgcKvh+AVioNIe32/3PLZnTUnSdL
+# nSWQu769An6s28g6QN8tkJ2LixOMivj4hh/haVqFjsftdNDlhvA+LmIlbyL2JcQz
+# 02X0B4QwTjp4DLNdNxqw6HZbY6QwTM26Xj3fPgLX9faw413QTc2KebilapBBm4SI
+# Wez2EhjuRm2gZP7Grj/faPD3SBu67JIv4G/T8LSakTyG6pN7kqNXiuNG5reWboQU
+# hBXHzQ0zCL+FzfJbIvMkrcjLNOmbJkJorHtTfU/nfYQBL5ANRmbcWY6la53b62Od
+# z2vBrqWiUlUtQfxSZePJq9LYRDmKgpc/ap2SxUfKVqwWwS5MenmJAzuyEYH+K0oB
+# 2Xlkgzbn3jCqzQbhfoD/PWi3RJ0Ix2mmxY21trojslwNo2xb6ATo7uEzTT8WXbB2
+# /DxpaFAnyrwDTa9XkC4N84DDg5veotOn9fsIxtV9tpNQnFj0aFafhOUjsZCxmOLn
+# /AUDO2U5PSgtGZA2dUKhghjYMIIY1AYKKwYBBAGCNwMDATGCGMQwghjABgkqhkiG
+# 9w0BBwKgghixMIIYrQIBAzEPMA0GCWCGSAFlAwQCAgUAMIH4BgsqhkiG9w0BCRAB
+# BKCB6ASB5TCB4gIBAQYKKwYBBAGyMQIBATAxMA0GCWCGSAFlAwQCAQUABCCkwvw3
+# 9CysBLWz3kiMZoW7sZG63dy5mD3d5+vZlpvTNAIVAM8fU38O9Jfj/+IxA96gU18l
+# uKc1GA8yMDI1MDcwOTE0MjAxMFqgdqR0MHIxCzAJBgNVBAYTAkdCMRcwFQYDVQQI
+# Ew5XZXN0IFlvcmtzaGlyZTEYMBYGA1UEChMPU2VjdGlnbyBMaW1pdGVkMTAwLgYD
+# VQQDEydTZWN0aWdvIFB1YmxpYyBUaW1lIFN0YW1waW5nIFNpZ25lciBSMzagghME
+# MIIGYjCCBMqgAwIBAgIRAKQpO24e3denNAiHrXpOtyQwDQYJKoZIhvcNAQEMBQAw
+# VTELMAkGA1UEBhMCR0IxGDAWBgNVBAoTD1NlY3RpZ28gTGltaXRlZDEsMCoGA1UE
+# AxMjU2VjdGlnbyBQdWJsaWMgVGltZSBTdGFtcGluZyBDQSBSMzYwHhcNMjUwMzI3
+# MDAwMDAwWhcNMzYwMzIxMjM1OTU5WjByMQswCQYDVQQGEwJHQjEXMBUGA1UECBMO
+# V2VzdCBZb3Jrc2hpcmUxGDAWBgNVBAoTD1NlY3RpZ28gTGltaXRlZDEwMC4GA1UE
+# AxMnU2VjdGlnbyBQdWJsaWMgVGltZSBTdGFtcGluZyBTaWduZXIgUjM2MIICIjAN
+# BgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEA04SV9G6kU3jyPRBLeBIHPNyUgVNn
+# YayfsGOyYEXrn3+SkDYTLs1crcw/ol2swE1TzB2aR/5JIjKNf75QBha2Ddj+4NEP
+# KDxHEd4dEn7RTWMcTIfm492TW22I8LfH+A7Ehz0/safc6BbsNBzjHTt7FngNfhfJ
+# oYOrkugSaT8F0IzUh6VUwoHdYDpiln9dh0n0m545d5A5tJD92iFAIbKHQWGbCQNY
+# plqpAFasHBn77OqW37P9BhOASdmjp3IijYiFdcA0WQIe60vzvrk0HG+iVcwVZjz+
+# t5OcXGTcxqOAzk1frDNZ1aw8nFhGEvG0ktJQknnJZE3D40GofV7O8WzgaAnZmoUn
+# 4PCpvH36vD4XaAF2CjiPsJWiY/j2xLsJuqx3JtuI4akH0MmGzlBUylhXvdNVXcjA
+# uIEcEQKtOBR9lU4wXQpISrbOT8ux+96GzBq8TdbhoFcmYaOBZKlwPP7pOp5Mzx/U
+# MhyBA93PQhiCdPfIVOCINsUY4U23p4KJ3F1HqP3H6Slw3lHACnLilGETXRg5X/Fp
+# 8G8qlG5Y+M49ZEGUp2bneRLZoyHTyynHvFISpefhBCV0KdRZHPcuSL5OAGWnBjAl
+# RtHvsMBrI3AAA0Tu1oGvPa/4yeeiAyu+9y3SLC98gDVbySnXnkujjhIh+oaatsk/
+# oyf5R2vcxHahajMCAwEAAaOCAY4wggGKMB8GA1UdIwQYMBaAFF9Y7UwxeqJhQo1S
+# gLqzYZcZojKbMB0GA1UdDgQWBBSIYYyhKjdkgShgoZsx0Iz9LALOTzAOBgNVHQ8B
+# Af8EBAMCBsAwDAYDVR0TAQH/BAIwADAWBgNVHSUBAf8EDDAKBggrBgEFBQcDCDBK
+# BgNVHSAEQzBBMDUGDCsGAQQBsjEBAgEDCDAlMCMGCCsGAQUFBwIBFhdodHRwczov
+# L3NlY3RpZ28uY29tL0NQUzAIBgZngQwBBAIwSgYDVR0fBEMwQTA/oD2gO4Y5aHR0
+# cDovL2NybC5zZWN0aWdvLmNvbS9TZWN0aWdvUHVibGljVGltZVN0YW1waW5nQ0FS
+# MzYuY3JsMHoGCCsGAQUFBwEBBG4wbDBFBggrBgEFBQcwAoY5aHR0cDovL2NydC5z
+# ZWN0aWdvLmNvbS9TZWN0aWdvUHVibGljVGltZVN0YW1waW5nQ0FSMzYuY3J0MCMG
+# CCsGAQUFBzABhhdodHRwOi8vb2NzcC5zZWN0aWdvLmNvbTANBgkqhkiG9w0BAQwF
+# AAOCAYEAAoE+pIZyUSH5ZakuPVKK4eWbzEsTRJOEjbIu6r7vmzXXLpJx4FyGmcqn
+# FZoa1dzx3JrUCrdG5b//LfAxOGy9Ph9JtrYChJaVHrusDh9NgYwiGDOhyyJ2zRy3
+# +kdqhwtUlLCdNjFjakTSE+hkC9F5ty1uxOoQ2ZkfI5WM4WXA3ZHcNHB4V42zi7Jk
+# 3ktEnkSdViVxM6rduXW0jmmiu71ZpBFZDh7Kdens+PQXPgMqvzodgQJEkxaION5X
+# RCoBxAwWwiMm2thPDuZTzWp/gUFzi7izCmEt4pE3Kf0MOt3ccgwn4Kl2FIcQaV55
+# nkjv1gODcHcD9+ZVjYZoyKTVWb4VqMQy/j8Q3aaYd/jOQ66Fhk3NWbg2tYl5jhQC
+# uIsE55Vg4N0DUbEWvXJxtxQQaVR5xzhEI+BjJKzh3TQ026JxHhr2fuJ0mV68AluF
+# r9qshgwS5SpN5FFtaSEnAwqZv3IS+mlG50rK7W3qXbWwi4hmpylUfygtYLEdLQuk
+# NEX1jiOKMIIGFDCCA/ygAwIBAgIQeiOu2lNplg+RyD5c9MfjPzANBgkqhkiG9w0B
+# AQwFADBXMQswCQYDVQQGEwJHQjEYMBYGA1UEChMPU2VjdGlnbyBMaW1pdGVkMS4w
+# LAYDVQQDEyVTZWN0aWdvIFB1YmxpYyBUaW1lIFN0YW1waW5nIFJvb3QgUjQ2MB4X
+# DTIxMDMyMjAwMDAwMFoXDTM2MDMyMTIzNTk1OVowVTELMAkGA1UEBhMCR0IxGDAW
+# BgNVBAoTD1NlY3RpZ28gTGltaXRlZDEsMCoGA1UEAxMjU2VjdGlnbyBQdWJsaWMg
+# VGltZSBTdGFtcGluZyBDQSBSMzYwggGiMA0GCSqGSIb3DQEBAQUAA4IBjwAwggGK
+# AoIBgQDNmNhDQatugivs9jN+JjTkiYzT7yISgFQ+7yavjA6Bg+OiIjPm/N/t3nC7
+# wYUrUlY3mFyI32t2o6Ft3EtxJXCc5MmZQZ8AxCbh5c6WzeJDB9qkQVa46xiYEpc8
+# 1KnBkAWgsaXnLURoYZzksHIzzCNxtIXnb9njZholGw9djnjkTdAA83abEOHQ4ujO
+# GIaBhPXG2NdV8TNgFWZ9BojlAvflxNMCOwkCnzlH4oCw5+4v1nssWeN1y4+RlaOy
+# wwRMUi54fr2vFsU5QPrgb6tSjvEUh1EC4M29YGy/SIYM8ZpHadmVjbi3Pl8hJiTW
+# w9jiCKv31pcAaeijS9fc6R7DgyyLIGflmdQMwrNRxCulVq8ZpysiSYNi79tw5RHW
+# ZUEhnRfs/hsp/fwkXsynu1jcsUX+HuG8FLa2BNheUPtOcgw+vHJcJ8HnJCrcUWhd
+# Fczf8O+pDiyGhVYX+bDDP3GhGS7TmKmGnbZ9N+MpEhWmbiAVPbgkqykSkzyYVr15
+# OApZYK8CAwEAAaOCAVwwggFYMB8GA1UdIwQYMBaAFPZ3at0//QET/xahbIICL9AK
+# PRQlMB0GA1UdDgQWBBRfWO1MMXqiYUKNUoC6s2GXGaIymzAOBgNVHQ8BAf8EBAMC
+# AYYwEgYDVR0TAQH/BAgwBgEB/wIBADATBgNVHSUEDDAKBggrBgEFBQcDCDARBgNV
+# HSAECjAIMAYGBFUdIAAwTAYDVR0fBEUwQzBBoD+gPYY7aHR0cDovL2NybC5zZWN0
+# aWdvLmNvbS9TZWN0aWdvUHVibGljVGltZVN0YW1waW5nUm9vdFI0Ni5jcmwwfAYI
+# KwYBBQUHAQEEcDBuMEcGCCsGAQUFBzAChjtodHRwOi8vY3J0LnNlY3RpZ28uY29t
+# L1NlY3RpZ29QdWJsaWNUaW1lU3RhbXBpbmdSb290UjQ2LnA3YzAjBggrBgEFBQcw
+# AYYXaHR0cDovL29jc3Auc2VjdGlnby5jb20wDQYJKoZIhvcNAQEMBQADggIBABLX
+# eyCtDjVYDJ6BHSVY/UwtZ3Svx2ImIfZVVGnGoUaGdltoX4hDskBMZx5NY5L6SCcw
+# DMZhHOmbyMhyOVJDwm1yrKYqGDHWzpwVkFJ+996jKKAXyIIaUf5JVKjccev3w16m
+# NIUlNTkpJEor7edVJZiRJVCAmWAaHcw9zP0hY3gj+fWp8MbOocI9Zn78xvm9XKGB
+# p6rEs9sEiq/pwzvg2/KjXE2yWUQIkms6+yslCRqNXPjEnBnxuUB1fm6bPAV+Tsr/
+# Qrd+mOCJemo06ldon4pJFbQd0TQVIMLv5koklInHvyaf6vATJP4DfPtKzSBPkKlO
+# tyaFTAjD2Nu+di5hErEVVaMqSVbfPzd6kNXOhYm23EWm6N2s2ZHCHVhlUgHaC4AC
+# MRCgXjYfQEDtYEK54dUwPJXV7icz0rgCzs9VI29DwsjVZFpO4ZIVR33LwXyPDbYF
+# kLqYmgHjR3tKVkhh9qKV2WCmBuC27pIOx6TYvyqiYbntinmpOqh/QPAnhDgexKG9
+# GX/n1PggkGi9HCapZp8fRwg8RftwS21Ln61euBG0yONM6noD2XQPrFwpm3GcuqJM
+# f0o8LLrFkSLRQNwxPDDkWXhW+gZswbaiie5fd/W2ygcto78XCSPfFWveUOSZ5SqK
+# 95tBO8aTHmEa4lpJVD7HrTEn9jb1EGvxOb1cnn0CMIIGgjCCBGqgAwIBAgIQNsKw
+# vXwbOuejs902y8l1aDANBgkqhkiG9w0BAQwFADCBiDELMAkGA1UEBhMCVVMxEzAR
+# BgNVBAgTCk5ldyBKZXJzZXkxFDASBgNVBAcTC0plcnNleSBDaXR5MR4wHAYDVQQK
+# ExVUaGUgVVNFUlRSVVNUIE5ldHdvcmsxLjAsBgNVBAMTJVVTRVJUcnVzdCBSU0Eg
+# Q2VydGlmaWNhdGlvbiBBdXRob3JpdHkwHhcNMjEwMzIyMDAwMDAwWhcNMzgwMTE4
+# MjM1OTU5WjBXMQswCQYDVQQGEwJHQjEYMBYGA1UEChMPU2VjdGlnbyBMaW1pdGVk
+# MS4wLAYDVQQDEyVTZWN0aWdvIFB1YmxpYyBUaW1lIFN0YW1waW5nIFJvb3QgUjQ2
+# MIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEAiJ3YuUVnnR3d6LkmgZpU
+# VMB8SQWbzFoVD9mUEES0QUCBdxSZqdTkdizICFNeINCSJS+lV1ipnW5ihkQyC0cR
+# LWXUJzodqpnMRs46npiJPHrfLBOifjfhpdXJ2aHHsPHggGsCi7uE0awqKggE/LkY
+# w3sqaBia67h/3awoqNvGqiFRJ+OTWYmUCO2GAXsePHi+/JUNAax3kpqstbl3vcTd
+# OGhtKShvZIvjwulRH87rbukNyHGWX5tNK/WABKf+Gnoi4cmisS7oSimgHUI0Wn/4
+# elNd40BFdSZ1EwpuddZ+Wr7+Dfo0lcHflm/FDDrOJ3rWqauUP8hsokDoI7D/yUVI
+# 9DAE/WK3Jl3C4LKwIpn1mNzMyptRwsXKrop06m7NUNHdlTDEMovXAIDGAvYynPt5
+# lutv8lZeI5w3MOlCybAZDpK3Dy1MKo+6aEtE9vtiTMzz/o2dYfdP0KWZwZIXbYsT
+# Ilg1YIetCpi5s14qiXOpRsKqFKqav9R1R5vj3NgevsAsvxsAnI8Oa5s2oy25qhso
+# BIGo/zi6GpxFj+mOdh35Xn91y72J4RGOJEoqzEIbW3q0b2iPuWLA911cRxgY5SJY
+# ubvjay3nSMbBPPFsyl6mY4/WYucmyS9lo3l7jk27MAe145GWxK4O3m3gEFEIkv7k
+# RmefDR7Oe2T1HxAnICQvr9sCAwEAAaOCARYwggESMB8GA1UdIwQYMBaAFFN5v1qq
+# K0rPVIDh2JvAnfKyA2bLMB0GA1UdDgQWBBT2d2rdP/0BE/8WoWyCAi/QCj0UJTAO
+# BgNVHQ8BAf8EBAMCAYYwDwYDVR0TAQH/BAUwAwEB/zATBgNVHSUEDDAKBggrBgEF
+# BQcDCDARBgNVHSAECjAIMAYGBFUdIAAwUAYDVR0fBEkwRzBFoEOgQYY/aHR0cDov
+# L2NybC51c2VydHJ1c3QuY29tL1VTRVJUcnVzdFJTQUNlcnRpZmljYXRpb25BdXRo
+# b3JpdHkuY3JsMDUGCCsGAQUFBwEBBCkwJzAlBggrBgEFBQcwAYYZaHR0cDovL29j
+# c3AudXNlcnRydXN0LmNvbTANBgkqhkiG9w0BAQwFAAOCAgEADr5lQe1oRLjlocXU
+# EYfktzsljOt+2sgXke3Y8UPEooU5y39rAARaAdAxUeiX1ktLJ3+lgxtoLQhn5cFb
+# 3GF2SSZRX8ptQ6IvuD3wz/LNHKpQ5nX8hjsDLRhsyeIiJsms9yAWnvdYOdEMq1W6
+# 1KE9JlBkB20XBee6JaXx4UBErc+YuoSb1SxVf7nkNtUjPfcxuFtrQdRMRi/fInV/
+# AobE8Gw/8yBMQKKaHt5eia8ybT8Y/Ffa6HAJyz9gvEOcF1VWXG8OMeM7Vy7Bs6mS
+# IkYeYtddU1ux1dQLbEGur18ut97wgGwDiGinCwKPyFO7ApcmVJOtlw9FVJxw/mL1
+# TbyBns4zOgkaXFnnfzg4qbSvnrwyj1NiurMp4pmAWjR+Pb/SIduPnmFzbSN/G8re
+# ZCL4fvGlvPFk4Uab/JVCSmj59+/mB2Gn6G/UYOy8k60mKcmaAZsEVkhOFuoj4we8
+# CYyaR9vd9PGZKSinaZIkvVjbH/3nlLb0a7SBIkiRzfPfS9T+JesylbHa1LtRV9U/
+# 7m0q7Ma2CQ/t392ioOssXW7oKLdOmMBl14suVFBmbzrt5V5cQPnwtd3UOTpS9oCG
+# +ZZheiIvPgkDmA8FzPsnfXW5qHELB43ET7HHFHeRPRYrMBKjkb8/IN7Po0d0hQoF
+# 4TeMM+zYAJzoKQnVKOLg8pZVPT8xggSSMIIEjgIBATBqMFUxCzAJBgNVBAYTAkdC
+# MRgwFgYDVQQKEw9TZWN0aWdvIExpbWl0ZWQxLDAqBgNVBAMTI1NlY3RpZ28gUHVi
+# bGljIFRpbWUgU3RhbXBpbmcgQ0EgUjM2AhEApCk7bh7d16c0CIetek63JDANBglg
+# hkgBZQMEAgIFAKCCAfkwGgYJKoZIhvcNAQkDMQ0GCyqGSIb3DQEJEAEEMBwGCSqG
+# SIb3DQEJBTEPFw0yNTA3MDkxNDIwMTBaMD8GCSqGSIb3DQEJBDEyBDDzBcrNqvnI
+# vOHzBj5g/dPiOflok7GjSBjo7O03YXsfQiCLPPJlhVBFGXHDKT7mMNMwggF6Bgsq
+# hkiG9w0BCRACDDGCAWkwggFlMIIBYTAWBBQ4yRSBEES03GY+k9R0S4FBhqm1sTCB
+# hwQUxq5U5HiG8Xw9VRJIjGnDSnr5wt0wbzBbpFkwVzELMAkGA1UEBhMCR0IxGDAW
+# BgNVBAoTD1NlY3RpZ28gTGltaXRlZDEuMCwGA1UEAxMlU2VjdGlnbyBQdWJsaWMg
+# VGltZSBTdGFtcGluZyBSb290IFI0NgIQeiOu2lNplg+RyD5c9MfjPzCBvAQUhT1j
+# LZOCgmF80JA1xJHeksFC2scwgaMwgY6kgYswgYgxCzAJBgNVBAYTAlVTMRMwEQYD
+# VQQIEwpOZXcgSmVyc2V5MRQwEgYDVQQHEwtKZXJzZXkgQ2l0eTEeMBwGA1UEChMV
+# VGhlIFVTRVJUUlVTVCBOZXR3b3JrMS4wLAYDVQQDEyVVU0VSVHJ1c3QgUlNBIENl
+# cnRpZmljYXRpb24gQXV0aG9yaXR5AhA2wrC9fBs656Oz3TbLyXVoMA0GCSqGSIb3
+# DQEBAQUABIICADlhBw+RwTt2dWc/6vY38XkWPSWQ1809EA7Prutxy03MO4Q+X0kJ
+# xxM8NIF+NTv7YGSJ8b8kIHOaDo9v7WS+ftNnDhJNNe/OvDhpBvfNbDJAS/XpuwhA
+# DQgMjqaMDBVYf4SljRyqRwR+i8Ti0oJTzyJyvemrBr1KSeEP4cSmL3OUiP7V7E0B
+# p3pEbZiQ/TsWEzKDJMAvudCy4bQMQguM5kRE8sg+5gAaknUDBJds3m32UQDUBT2U
+# wp+4ep5IhZNjw/tBek54vM4rXG4QI96UviclxjpHeLm22CJ+hARcW8LxzfA4/+3q
+# M78smYvx1vWxq72uotGnuVFFr7YnlP6mQecQUESuPhOuXW8GbQVbWjpOx2/LLC1z
+# QCHmhceQ+xA3QNbTBPRSNXbYt/utRsB1JBCSBCQaQaORfLVBI6FTrX0yCRFZWBk4
+# fVNIRaIvZxudL0qCa3mynb7m2MdFmx4r+LeLIW0RZRKjogSrTNOHNZIG4tZbBAJC
+# lT+mv+tx3g6VSoeQSiUR+9VAamq1cAEkGspc5tXpiHSkpblEZpMYAfj/pMSggnXi
+# nyKlG+hZftg3EgLeh93zjuZ5r9Pp9u5WvPPzYM4B//4hjOsE/dlLKMTfY1IJWcIT
+# U/xtTMZV8nk+DP8ONpqsZQGsHu92JQcXLm5Ov5eG0pokLeMZlRU8SntN
 # SIG # End signature block
