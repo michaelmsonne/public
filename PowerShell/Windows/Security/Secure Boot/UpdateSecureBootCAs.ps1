@@ -44,9 +44,8 @@ if (-not $adminRights) {
 
 function Show-Menu {
     #Clear-Host
-    Write-Host ""
     Write-Host "********** Secure Boot Update Menu for UEFI CA 2023 **********" -ForegroundColor Cyan
-    #Write-Host "*** Certificate Expiration: June 2026 - Update Required ***" -ForegroundColor Red
+    #Write-Host "*** Certificate Expiration: June 2026 ***" -ForegroundColor Red
     Write-Host ""
     Write-Host "Certificate Analysis:"
     Write-Host "1. Show certificate overview and expiration timeline"
@@ -56,15 +55,18 @@ function Show-Menu {
     Write-Host "Prerequisites & Setup:"
     Write-Host "4. Set up prerequisites for update"
     Write-Host "5. Export detailed report"
-    Write-Host "6. Show Secure Boot scheduled tasks"
+    Write-Host "6. Export TPM event logs"
+    Write-Host "7. Show Secure Boot scheduled tasks"
     Write-Host ""
     Write-Host "Update Process:"
-    Write-Host "7. Set registry key for certificate update (DB update)"
-    Write-Host "8. Run scheduled task"
-    Write-Host "9. Reboot the machine"
-    Write-Host "10. Verify Secure Boot DB update"
+    Write-Host "8. Set registry key for certificate update (DB update)"
+    Write-Host "9. Set registry key for DBX update (restart required)"
+    Write-Host "10. Run scheduled task"
+    Write-Host "11. Reboot the machine"
+    Write-Host "12. Verify Secure Boot DB update"
     Write-Host ""
-    Write-Host "11. Exit"
+    Write-Host "13. Exit"
+    Write-Host ""
 }
 
 function RunScheduledTask {
@@ -185,6 +187,9 @@ function Get-SecureBootStatus {
         OS_Version                    = (Get-CimInstance Win32_OperatingSystem).Version
         UEFI_FirmwareVersion          = $null
         AvailableUpdatesSet           = $false
+        DBUpdateAvailable             = $false
+        DBXUpdateAvailable            = $false
+        AvailableUpdatesValue         = 0
         CertificateExpirationCheck    = $null
     }
 
@@ -216,12 +221,26 @@ function Get-SecureBootStatus {
     try {
         if (Test-Path $regPath) {
             $availableUpdates = Get-ItemProperty -Path $regPath -Name AvailableUpdates -ErrorAction SilentlyContinue
-            if ($availableUpdates.AvailableUpdates -eq 0x40) { #DB update
-                $results.AvailableUpdatesSet = $true
+            if ($availableUpdates) {
+                $results.AvailableUpdatesValue = $availableUpdates.AvailableUpdates
+                
+                # Check for DB update (0x40 = 64 decimal)
+                if (($availableUpdates.AvailableUpdates -band 0x40) -eq 0x40) {
+                    $results.DBUpdateAvailable = $true
+                    $results.AvailableUpdatesSet = $true
+                }
+                
+                # Check for DBX update (0x02 = 2 decimal) 
+                if (($availableUpdates.AvailableUpdates -band 0x02) -eq 0x02) {
+                    $results.DBXUpdateAvailable = $true
+                    $results.AvailableUpdatesSet = $true
+                }
             }
         }
     } catch {
         $results.AvailableUpdatesSet = $false
+        $results.DBUpdateAvailable = $false
+        $results.DBXUpdateAvailable = $false
     }
 
     # Diagnostic data level
@@ -311,9 +330,20 @@ function Export-SecureBootReport {
     $statusReportPath = Join-Path $logPath "SecureBootStatus_$(Get-Date -Format 'yyyyMMdd_HHmmss').csv"
     $secureBootStatus | Export-Csv -Path $statusReportPath -NoTypeInformation
     
-    Write-Host "Reports exported to:" -ForegroundColor Green
+    # Export TPM event logs
+    Write-Host "`nExporting TPM and Secure Boot event logs..." -ForegroundColor Yellow
+    $tpmExportResult = Export-TPMEventLogs -LogPath $logPath -DaysBack 30
+    
+    Write-Host "`nReports exported to:" -ForegroundColor Green
     Write-Host "  System Info: $systemReportPath" -ForegroundColor Cyan
     Write-Host "  Secure Boot Status: $statusReportPath" -ForegroundColor Cyan
+    if ($tpmExportResult.TPMEventsPath) {
+        Write-Host "  TPM Events (CSV): $($tpmExportResult.TPMEventsPath)" -ForegroundColor Cyan
+        Write-Host "  TPM Events (JSON): $($tpmExportResult.TPMEventsJsonPath)" -ForegroundColor Cyan
+    }
+    if ($tpmExportResult.SecureBootEventsPath) {
+        Write-Host "  Secure Boot Events: $($tpmExportResult.SecureBootEventsPath)" -ForegroundColor Cyan
+    }
     
     # Display results on screen
     Write-Host "`nSystem Information:" -ForegroundColor Yellow
@@ -779,14 +809,185 @@ function Show-SecureBootTasks {
     
     Write-Host "================================================================" -ForegroundColor Gray
 }
+
+function Export-TPMEventLogs {
+    param(
+        [string]$LogPath = "C:\Logs",
+        [int]$DaysBack = 30
+    )
+    
+    Write-Host "Exporting TPM-related event logs..." -ForegroundColor Yellow
+    
+    # Create logs directory if it doesn't exist
+    if (-not (Test-Path $LogPath)) {
+        New-Item -Path $LogPath -ItemType Directory -Force | Out-Null
+    }
+    
+    $timestamp = Get-Date -Format 'yyyyMMdd_HHmmss'
+    $tpmLogPath = Join-Path $LogPath "TPMEvents_$timestamp.csv"
+    $tpmLogJsonPath = Join-Path $LogPath "TPMEvents_$timestamp.json"
+    
+    # Calculate start time for filtering
+    $startTime = (Get-Date).AddDays(-$DaysBack)
+    
+    try {
+        Write-Host "  Querying TPM events from the last $DaysBack days..." -ForegroundColor Cyan
+        
+        # Get TPM-related events with specific IDs that are relevant to Secure Boot and certificate updates
+        $tpmEvents = Get-WinEvent -FilterHashtable @{
+            ProviderName = 'microsoft-windows-tpm-wmi'
+            Id = 1032, 1033, 1034, 1035, 1036, 1037, 1795, 1796, 1797, 1798, 1799
+            StartTime = $startTime
+        } -ErrorAction SilentlyContinue
+        
+        if ($tpmEvents) {
+            Write-Host "  Found $($tpmEvents.Count) TPM events" -ForegroundColor Green
+            
+            # Create structured data for export
+            $structuredEvents = $tpmEvents | ForEach-Object {
+                [PSCustomObject]@{
+                    TimeCreated = $_.TimeCreated
+                    Id = $_.Id
+                    Level = $_.Level
+                    LevelDisplayName = $_.LevelDisplayName
+                    ProviderName = $_.ProviderName
+                    Message = $_.Message
+                    UserId = $_.UserId
+                    ProcessId = $_.ProcessId
+                    ThreadId = $_.ThreadId
+                    MachineName = $_.MachineName
+                    ActivityId = $_.ActivityId
+                    RelatedActivityId = $_.RelatedActivityId
+                    Keywords = $_.Keywords
+                    KeywordsDisplayNames = ($_.KeywordsDisplayNames -join ', ')
+                    OpcodeName = $_.OpcodeName
+                    TaskDisplayName = $_.TaskDisplayName
+                    Properties = ($_.Properties | ForEach-Object { $_.Value }) -join '; '
+                }
+            }
+            
+            # Export to CSV
+            $structuredEvents | Export-Csv -Path $tpmLogPath -NoTypeInformation -Encoding UTF8
+            Write-Host "  CSV export: $tpmLogPath" -ForegroundColor Cyan
+            
+            # Export to JSON for better readability of complex data
+            $structuredEvents | ConvertTo-Json -Depth 3 | Out-File -FilePath $tpmLogJsonPath -Encoding UTF8
+            Write-Host "  JSON export: $tpmLogJsonPath" -ForegroundColor Cyan
+            
+            # Display summary of events by ID
+            Write-Host "`n  Event Summary:" -ForegroundColor Yellow
+            $eventSummary = $tpmEvents | Group-Object Id | Sort-Object Name
+            foreach ($group in $eventSummary) {
+                $eventDescription = switch ($group.Name) {
+                    1032 { "TPM initialization" }
+                    1033 { "TPM clear operation" }
+                    1034 { "TPM ownership taken" }
+                    1035 { "TPM physical presence operation" }
+                    1036 { "TPM platform configuration register (PCR) extension" }
+                    1037 { "TPM measurement" }
+                    1795 { "TPM attestation identity key creation" }
+                    1796 { "TPM endorsement key creation" }
+                    1797 { "TPM storage root key creation" }
+                    1798 { "TPM platform configuration register (PCR) quote" }
+                    1799 { "TPM command execution" }
+                    default { "TPM event" }
+                }
+                Write-Host "    Event $($group.Name): $($group.Count) events - $eventDescription" -ForegroundColor Gray
+            }
+            
+            # Show recent critical events
+            $criticalEvents = $tpmEvents | Where-Object { $_.Level -le 3 } | Sort-Object TimeCreated -Descending | Select-Object -First 5
+            if ($criticalEvents) {
+                Write-Host "`n  Recent Critical/Warning Events:" -ForegroundColor Yellow
+                foreach ($tpmEvent in $criticalEvents) {
+                    $levelColor = switch ($tpmEvent.Level) {
+                        1 { "Red" }    # Critical
+                        2 { "Red" }    # Error
+                        3 { "Yellow" } # Warning
+                        default { "Gray" }
+                    }
+                    Write-Host "    [$($tpmEvent.TimeCreated)] ID $($tpmEvent.Id) - $($tpmEvent.LevelDisplayName)" -ForegroundColor $levelColor
+                    Write-Host "      $($tpmEvent.Message.Substring(0, [Math]::Min(100, $tpmEvent.Message.Length)))..." -ForegroundColor Gray
+                }
+            }
+            
+        } else {
+            Write-Host "  No TPM events found in the specified time range" -ForegroundColor Yellow
+            Write-Host "  This might indicate:" -ForegroundColor Gray
+            Write-Host "    - TPM is not enabled or not present" -ForegroundColor Gray
+            Write-Host "    - No TPM operations occurred recently" -ForegroundColor Gray
+            Write-Host "    - Event log has been cleared" -ForegroundColor Gray
+        }
+        
+    } catch {
+        Write-Host "  Error retrieving TPM events: $_" -ForegroundColor Red
+        Write-Host "  This might indicate insufficient permissions or TPM not available" -ForegroundColor Yellow
+    }
+    
+    # Also check for Secure Boot related events in the System log
+    try {
+        Write-Host "`n  Checking for Secure Boot events in System log..." -ForegroundColor Cyan
+        
+        $secureBootEvents = Get-WinEvent -FilterHashtable @{
+            LogName = 'System'
+            ProviderName = 'Microsoft-Windows-Kernel-Boot', 'Microsoft-Windows-Kernel-General'
+            StartTime = $startTime
+        } -ErrorAction SilentlyContinue | Where-Object { 
+            $_.Message -match 'Secure Boot|UEFI|Boot Manager|winload|bootmgr' 
+        }
+        
+        if ($secureBootEvents) {
+            $secureBootLogPath = Join-Path $LogPath "SecureBootEvents_$timestamp.csv"
+            $secureBootEvents | Select-Object TimeCreated, Id, Level, LevelDisplayName, ProviderName, Message | 
+                Export-Csv -Path $secureBootLogPath -NoTypeInformation -Encoding UTF8
+            Write-Host "  Secure Boot events exported: $secureBootLogPath" -ForegroundColor Cyan
+            Write-Host "  Found $($secureBootEvents.Count) Secure Boot related events" -ForegroundColor Green
+        } else {
+            Write-Host "  No Secure Boot related events found in System log" -ForegroundColor Gray
+        }
+        
+    } catch {
+        Write-Host "  Could not retrieve Secure Boot events: $_" -ForegroundColor Yellow
+    }
+    
+    Write-Host "`nTPM event log export completed" -ForegroundColor Green
+    return @{
+        TPMEventsPath = $tpmLogPath
+        TPMEventsJsonPath = $tpmLogJsonPath
+        SecureBootEventsPath = if ($secureBootEvents) { $secureBootLogPath } else { $null }
+        EventCount = if ($tpmEvents) { $tpmEvents.Count } else { 0 }
+    }
+}
+
     
 Write-Host "================================================================" -ForegroundColor Gray
 
 # Main execution loop
 do {
+
+    $IsArm = $false
+    try {
+        $arch = (Get-WmiObject Win32_Processor -ErrorAction Stop).Architecture
+        # 0 = x86, 9 = x64, 5 = ARM, 12 = ARM64
+        if ($arch -eq 5 -or $arch -eq 12) {
+            $IsArm = $true
+        }
+        if ($arch -eq 0) {
+            Write-Host "Detected x86 architecture (32-bit).`n"
+        } elseif ($arch -eq 9) {
+            Write-Host "Detected x64 architecture (64-bit).`n"
+        } elseif ($IsArm) {
+            Write-Host "Detected ARM architecture.`n"
+        } else {
+            Write-Host "Unknown CPU architecture detected. Proceeding with defaults." -ForegroundColor Yellow
+        }
+    } catch {
+        Write-Warning "Unable to determine CPU architecture, proceeding with defaults (x64).`n"
+    }
+
     Show-Menu
-    Write-Host ""
-    $choice = Read-Host "Select a task (1-11)"
+
+    $choice = Read-Host "Select a task (1-13)"
 
     try {
         switch ($choice) {
@@ -838,30 +1039,58 @@ do {
                 Export-SecureBootReport
             }
             6 {
+                # Export TPM event logs
+                Write-Host "Exporting TPM event logs..." -ForegroundColor Yellow
+                $exportResult = Export-TPMEventLogs
+                
+                if ($exportResult.EventCount -gt 0) {
+                    Write-Host "`nTPM event log export completed successfully!" -ForegroundColor Green
+                    Write-Host "Found $($exportResult.EventCount) TPM events" -ForegroundColor Cyan
+                } else {
+                    Write-Host "`nNo TPM events found or TPM not available" -ForegroundColor Yellow
+                }
+            }
+            7 {
                 # Show Secure Boot scheduled tasks
                 Show-SecureBootTasks
             }
-            7 {
+            8 {
                 # Set registry key for certificate update
                 Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\SecureBoot" -Name "AvailableUpdates" -Value 0x40 #DB update
                 Write-Host "Registry key set successfully to apply the update for DB" -ForegroundColor Green
     
-                # Prompt to execute task 8 automatically or manually
-                $task8Choice = Read-Host "Do you want to execute task 8 (Run scheduled task) automatically (Y) or manually (M)?"
-                if ($task8Choice -eq 'Y' -or $task8Choice -eq 'y') {
+                # Prompt to execute task 10 automatically or manually
+                $task10Choice = Read-Host "Do you want to execute task 10 (Run scheduled task) automatically (Y) or manually (M)?"
+                if ($task10Choice -eq 'Y' -or $task10Choice -eq 'y') {
                     # Run scheduled task to update Secure Boot DB with the new CA
                     RunScheduledTask
-                } elseif ($task8Choice -eq 'M' -or $task8Choice -eq 'm') {
-                    Write-Host "You can manually execute task 8 from the menu."
+                } elseif ($task10Choice -eq 'M' -or $task10Choice -eq 'm') {
+                    Write-Host "You can manually execute task 10 from the menu."
                 } else {
-                    Write-Host "Invalid choice. Task 8 will not be executed."
+                    Write-Host "Invalid choice. Task 10 will not be executed."
                 }
             }
-            8 {
+            9 {
+                # Set registry key for DBX update (restart required)
+                Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\SecureBoot" -Name "AvailableUpdates" -Value 0x02 -Force
+                Write-Host "Registry key set successfully to apply the DBX update" -ForegroundColor Green
+                Write-Host "WARNING: A restart is required for DBX updates to take effect!" -ForegroundColor Yellow
+                Write-Host "The DBX (forbidden signatures database) will be updated on next reboot." -ForegroundColor Cyan
+                
+                # Prompt for reboot
+                $rebootChoice = Read-Host "Do you want to reboot now to apply the DBX update? (Y/N)"
+                if ($rebootChoice -eq 'Y' -or $rebootChoice -eq 'y') {
+                    Write-Host "Rebooting the machine to apply DBX update..." -ForegroundColor Yellow
+                    Restart-Computer -Force
+                } else {
+                    Write-Host "Remember to reboot manually to apply the DBX update." -ForegroundColor Yellow
+                }
+            }
+            10 {
                 # Run scheduled task manually to update Secure Boot DB with the new CA
                 RunScheduledTask
             }
-            9 {
+            11 {
                 # Confirm reboot
                 $confirmReboot = Read-Host "Do you want to reboot the machine? (Y/N)"
                 if ($confirmReboot -eq 'Y' -or $confirmReboot -eq 'y') {
@@ -872,7 +1101,7 @@ do {
                     Write-Host "Reboot canceled."
                 }
             }
-            10 {
+            12 {
                 # Verify Secure Boot DB update with detailed analysis
                 Write-Host "Performing detailed certificate verification..." -ForegroundColor Yellow
                 $certInfo = Get-DetailedCertificateInfo
@@ -928,13 +1157,13 @@ do {
                     Write-Host ""
                 }
             }
-            11 {
+            13 {
                 # Exit
                 Write-Host "Exiting Secure Boot Update Menu."
             }
             default {
                 # Invalid selection
-                Write-Host "Invalid selection. Please enter a number between 1 and 11."
+                Write-Host "Invalid selection. Please enter a number between 1 and 13."
             }
         }
     }
@@ -943,259 +1172,10 @@ do {
         Write-Host "An error occurred: $_" -ForegroundColor Red
     }    
 
-    if ($choice -ne 11) {
+    if ($choice -ne 13) {
         # Prompt to continue
         $null = Read-Host "Press Enter to continue..."
     }
 
-} while ($choice -ne 11)
-# SIG # Begin signature block
-# MIIudgYJKoZIhvcNAQcCoIIuZzCCLmMCAQExDzANBglghkgBZQMEAgEFADB5Bgor
-# BgEEAYI3AgEEoGswaTA0BgorBgEEAYI3AgEeMCYCAwEAAAQQH8w7YFlLCE63JNLG
-# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCAGVER/oRVIjl2v
-# zcsHFZQYFGfKngp5KOo4kglAe6ZhzqCCEd8wggVvMIIEV6ADAgECAhBI/JO0YFWU
-# jTanyYqJ1pQWMA0GCSqGSIb3DQEBDAUAMHsxCzAJBgNVBAYTAkdCMRswGQYDVQQI
-# DBJHcmVhdGVyIE1hbmNoZXN0ZXIxEDAOBgNVBAcMB1NhbGZvcmQxGjAYBgNVBAoM
-# EUNvbW9kbyBDQSBMaW1pdGVkMSEwHwYDVQQDDBhBQUEgQ2VydGlmaWNhdGUgU2Vy
-# dmljZXMwHhcNMjEwNTI1MDAwMDAwWhcNMjgxMjMxMjM1OTU5WjBWMQswCQYDVQQG
-# EwJHQjEYMBYGA1UEChMPU2VjdGlnbyBMaW1pdGVkMS0wKwYDVQQDEyRTZWN0aWdv
-# IFB1YmxpYyBDb2RlIFNpZ25pbmcgUm9vdCBSNDYwggIiMA0GCSqGSIb3DQEBAQUA
-# A4ICDwAwggIKAoICAQCN55QSIgQkdC7/FiMCkoq2rjaFrEfUI5ErPtx94jGgUW+s
-# hJHjUoq14pbe0IdjJImK/+8Skzt9u7aKvb0Ffyeba2XTpQxpsbxJOZrxbW6q5KCD
-# J9qaDStQ6Utbs7hkNqR+Sj2pcaths3OzPAsM79szV+W+NDfjlxtd/R8SPYIDdub7
-# P2bSlDFp+m2zNKzBenjcklDyZMeqLQSrw2rq4C+np9xu1+j/2iGrQL+57g2extme
-# me/G3h+pDHazJyCh1rr9gOcB0u/rgimVcI3/uxXP/tEPNqIuTzKQdEZrRzUTdwUz
-# T2MuuC3hv2WnBGsY2HH6zAjybYmZELGt2z4s5KoYsMYHAXVn3m3pY2MeNn9pib6q
-# RT5uWl+PoVvLnTCGMOgDs0DGDQ84zWeoU4j6uDBl+m/H5x2xg3RpPqzEaDux5mcz
-# mrYI4IAFSEDu9oJkRqj1c7AGlfJsZZ+/VVscnFcax3hGfHCqlBuCF6yH6bbJDoEc
-# QNYWFyn8XJwYK+pF9e+91WdPKF4F7pBMeufG9ND8+s0+MkYTIDaKBOq3qgdGnA2T
-# OglmmVhcKaO5DKYwODzQRjY1fJy67sPV+Qp2+n4FG0DKkjXp1XrRtX8ArqmQqsV/
-# AZwQsRb8zG4Y3G9i/qZQp7h7uJ0VP/4gDHXIIloTlRmQAOka1cKG8eOO7F/05QID
-# AQABo4IBEjCCAQ4wHwYDVR0jBBgwFoAUoBEKIz6W8Qfs4q8p74Klf9AwpLQwHQYD
-# VR0OBBYEFDLrkpr/NZZILyhAQnAgNpFcF4XmMA4GA1UdDwEB/wQEAwIBhjAPBgNV
-# HRMBAf8EBTADAQH/MBMGA1UdJQQMMAoGCCsGAQUFBwMDMBsGA1UdIAQUMBIwBgYE
-# VR0gADAIBgZngQwBBAEwQwYDVR0fBDwwOjA4oDagNIYyaHR0cDovL2NybC5jb21v
-# ZG9jYS5jb20vQUFBQ2VydGlmaWNhdGVTZXJ2aWNlcy5jcmwwNAYIKwYBBQUHAQEE
-# KDAmMCQGCCsGAQUFBzABhhhodHRwOi8vb2NzcC5jb21vZG9jYS5jb20wDQYJKoZI
-# hvcNAQEMBQADggEBABK/oe+LdJqYRLhpRrWrJAoMpIpnuDqBv0WKfVIHqI0fTiGF
-# OaNrXi0ghr8QuK55O1PNtPvYRL4G2VxjZ9RAFodEhnIq1jIV9RKDwvnhXRFAZ/ZC
-# J3LFI+ICOBpMIOLbAffNRk8monxmwFE2tokCVMf8WPtsAO7+mKYulaEMUykfb9gZ
-# pk+e96wJ6l2CxouvgKe9gUhShDHaMuwV5KZMPWw5c9QLhTkg4IUaaOGnSDip0TYl
-# d8GNGRbFiExmfS9jzpjoad+sPKhdnckcW67Y8y90z7h+9teDnRGWYpquRRPaf9xH
-# +9/DUp/mBlXpnYzyOmJRvOwkDynUWICE5EV7WtgwggYaMIIEAqADAgECAhBiHW0M
-# UgGeO5B5FSCJIRwKMA0GCSqGSIb3DQEBDAUAMFYxCzAJBgNVBAYTAkdCMRgwFgYD
-# VQQKEw9TZWN0aWdvIExpbWl0ZWQxLTArBgNVBAMTJFNlY3RpZ28gUHVibGljIENv
-# ZGUgU2lnbmluZyBSb290IFI0NjAeFw0yMTAzMjIwMDAwMDBaFw0zNjAzMjEyMzU5
-# NTlaMFQxCzAJBgNVBAYTAkdCMRgwFgYDVQQKEw9TZWN0aWdvIExpbWl0ZWQxKzAp
-# BgNVBAMTIlNlY3RpZ28gUHVibGljIENvZGUgU2lnbmluZyBDQSBSMzYwggGiMA0G
-# CSqGSIb3DQEBAQUAA4IBjwAwggGKAoIBgQCbK51T+jU/jmAGQ2rAz/V/9shTUxjI
-# ztNsfvxYB5UXeWUzCxEeAEZGbEN4QMgCsJLZUKhWThj/yPqy0iSZhXkZ6Pg2A2NV
-# DgFigOMYzB2OKhdqfWGVoYW3haT29PSTahYkwmMv0b/83nbeECbiMXhSOtbam+/3
-# 6F09fy1tsB8je/RV0mIk8XL/tfCK6cPuYHE215wzrK0h1SWHTxPbPuYkRdkP05Zw
-# mRmTnAO5/arnY83jeNzhP06ShdnRqtZlV59+8yv+KIhE5ILMqgOZYAENHNX9SJDm
-# +qxp4VqpB3MV/h53yl41aHU5pledi9lCBbH9JeIkNFICiVHNkRmq4TpxtwfvjsUe
-# dyz8rNyfQJy/aOs5b4s+ac7IH60B+Ja7TVM+EKv1WuTGwcLmoU3FpOFMbmPj8pz4
-# 4MPZ1f9+YEQIQty/NQd/2yGgW+ufflcZ/ZE9o1M7a5Jnqf2i2/uMSWymR8r2oQBM
-# dlyh2n5HirY4jKnFH/9gRvd+QOfdRrJZb1sCAwEAAaOCAWQwggFgMB8GA1UdIwQY
-# MBaAFDLrkpr/NZZILyhAQnAgNpFcF4XmMB0GA1UdDgQWBBQPKssghyi47G9IritU
-# pimqF6TNDDAOBgNVHQ8BAf8EBAMCAYYwEgYDVR0TAQH/BAgwBgEB/wIBADATBgNV
-# HSUEDDAKBggrBgEFBQcDAzAbBgNVHSAEFDASMAYGBFUdIAAwCAYGZ4EMAQQBMEsG
-# A1UdHwREMEIwQKA+oDyGOmh0dHA6Ly9jcmwuc2VjdGlnby5jb20vU2VjdGlnb1B1
-# YmxpY0NvZGVTaWduaW5nUm9vdFI0Ni5jcmwwewYIKwYBBQUHAQEEbzBtMEYGCCsG
-# AQUFBzAChjpodHRwOi8vY3J0LnNlY3RpZ28uY29tL1NlY3RpZ29QdWJsaWNDb2Rl
-# U2lnbmluZ1Jvb3RSNDYucDdjMCMGCCsGAQUFBzABhhdodHRwOi8vb2NzcC5zZWN0
-# aWdvLmNvbTANBgkqhkiG9w0BAQwFAAOCAgEABv+C4XdjNm57oRUgmxP/BP6YdURh
-# w1aVcdGRP4Wh60BAscjW4HL9hcpkOTz5jUug2oeunbYAowbFC2AKK+cMcXIBD0Zd
-# OaWTsyNyBBsMLHqafvIhrCymlaS98+QpoBCyKppP0OcxYEdU0hpsaqBBIZOtBajj
-# cw5+w/KeFvPYfLF/ldYpmlG+vd0xqlqd099iChnyIMvY5HexjO2AmtsbpVn0OhNc
-# WbWDRF/3sBp6fWXhz7DcML4iTAWS+MVXeNLj1lJziVKEoroGs9Mlizg0bUMbOalO
-# hOfCipnx8CaLZeVme5yELg09Jlo8BMe80jO37PU8ejfkP9/uPak7VLwELKxAMcJs
-# zkyeiaerlphwoKx1uHRzNyE6bxuSKcutisqmKL5OTunAvtONEoteSiabkPVSZ2z7
-# 6mKnzAfZxCl/3dq3dUNw4rg3sTCggkHSRqTqlLMS7gjrhTqBmzu1L90Y1KWN/Y5J
-# KdGvspbOrTfOXyXvmPL6E52z1NZJ6ctuMFBQZH3pwWvqURR8AgQdULUvrxjUYbHH
-# j95Ejza63zdrEcxWLDX6xWls/GDnVNueKjWUH3fTv1Y8Wdho698YADR7TNx8X8z2
-# Bev6SivBBOHY+uqiirZtg0y9ShQoPzmCcn63Syatatvx157YK9hlcPmVoa1oDE5/
-# L9Uo2bC5a4CH2RwwggZKMIIEsqADAgECAhAR4aCGZIeugmCCjSjwUXrGMA0GCSqG
-# SIb3DQEBDAUAMFQxCzAJBgNVBAYTAkdCMRgwFgYDVQQKEw9TZWN0aWdvIExpbWl0
-# ZWQxKzApBgNVBAMTIlNlY3RpZ28gUHVibGljIENvZGUgU2lnbmluZyBDQSBSMzYw
-# HhcNMjMwMjE5MDAwMDAwWhcNMjYwNTE4MjM1OTU5WjBhMQswCQYDVQQGEwJESzEU
-# MBIGA1UECAwLSG92ZWRzdGFkZW4xHTAbBgNVBAoMFE1pY2hhZWwgTW9ydGVuIFNv
-# bm5lMR0wGwYDVQQDDBRNaWNoYWVsIE1vcnRlbiBTb25uZTCCAiIwDQYJKoZIhvcN
-# AQEBBQADggIPADCCAgoCggIBALVGIWG57aPiOruK3bg3tlPMHol1pfnEQiCkYom7
-# hFXLVxhGve4OcQmx9xtKy7QIHmbHdH3Vc4J4foS0/bv4cnzYRd0g2qcTjo0Q+b5J
-# RUSZQ0yUbLyHJf1TkCJOODWORJlsi/xppcQdAbU7QX2KFE4NkQzNUIOTSlKctx99
-# ZqFevKIvwhkmIoB+WWnl/qS4ipFMO/d4m7o8IIgi49LPq3tVxZs0aJ6N02X5Xp2F
-# oG2fZynudHIf9waYFtYXA3B8msQwaREpQY880Kki/275pSC+T8+mbnbwrKXOZ8Gj
-# W2vvEJZe5ySIrA27omMsBnmoZYkiNMmMGYWQiZ5E75ZIiZ4UqWpuahoGpBLoZNX+
-# TjKFFuqmo8EqfYdCpLiYgw95q3gHONu6TwTg01WwaeZFtlhx8qSgD8x7L/SRn4qn
-# x//ucBg1Q0f3Al6lz++z8t4ty6CxF/Wr9ZKOoYhHft6SAE7Td9VGdWJLkp6cY1qf
-# rq+QA+xR7rjFi7dagxvP1RzZqeh5glAQ74g3/lZJdgDTv/yB/zjxj6dHjzwii501
-# VW4ecSX9RQpwWbleDDriDbVNJxwz37mBcSQykGXVfVV8AcdXn1zvEDkdshtLUGAL
-# 6q61CugAE4LoOWohBEtk7dV2X0rvEY3Wce47ATLY14VM5gQCEsRxkEqt1HwdK4R+
-# v/LtAgMBAAGjggGJMIIBhTAfBgNVHSMEGDAWgBQPKssghyi47G9IritUpimqF6TN
-# DDAdBgNVHQ4EFgQUdfN+UjqPPYYWLqh4zXaTNj8AfJswDgYDVR0PAQH/BAQDAgeA
-# MAwGA1UdEwEB/wQCMAAwEwYDVR0lBAwwCgYIKwYBBQUHAwMwSgYDVR0gBEMwQTA1
-# BgwrBgEEAbIxAQIBAwIwJTAjBggrBgEFBQcCARYXaHR0cHM6Ly9zZWN0aWdvLmNv
-# bS9DUFMwCAYGZ4EMAQQBMEkGA1UdHwRCMEAwPqA8oDqGOGh0dHA6Ly9jcmwuc2Vj
-# dGlnby5jb20vU2VjdGlnb1B1YmxpY0NvZGVTaWduaW5nQ0FSMzYuY3JsMHkGCCsG
-# AQUFBwEBBG0wazBEBggrBgEFBQcwAoY4aHR0cDovL2NydC5zZWN0aWdvLmNvbS9T
-# ZWN0aWdvUHVibGljQ29kZVNpZ25pbmdDQVIzNi5jcnQwIwYIKwYBBQUHMAGGF2h0
-# dHA6Ly9vY3NwLnNlY3RpZ28uY29tMA0GCSqGSIb3DQEBDAUAA4IBgQBF8qhaDXok
-# 5R784NqfjMsNfS97H+ItE+Sxm/QMcIhTiiIBhIYd/lLfdTwpz5aqTl5M4+FDBDeN
-# m0mjY8k2Cdg+DOf4JfvZAv4tQVybhEd42E5NTfG5sWN6ruMjBLpSsjwVzvonmeUL
-# SwnXY+AtVSag0MU/UnyFOTS69gTjOq3EC+H/OJa/DfI8T/sDICzTy55c5aCDHRXb
-# 6Dsr+Hm7PiGCQ6c0AhYOt/etXK1+YjQo9T+FcIF0Ze34CKirIRa1FFe26gNjHdpr
-# MA62TOXQJrK+x9DtVY8QCb+IUZNYj6lNiXno3t69JN6FvIU2EtPrKs8SBV2uDZQM
-# ecNJ+3w77/EHod82uB73vGiOvX8Q2CkdMunz+VfXyY4Oh10AEnCqzl0UV2HHH66H
-# sa8Zti+kXWH9HTUkDJCd2VHdDEOJ0o2kA1/SfETMPAO/yeFz1xXy6CIJ50dkfzuY
-# gf9SsIAod1Dx9THs2qkXIwyf5lTJBvPHLRqxs/k+Mn70AUiyj50/JYMxghvtMIIb
-# 6QIBATBoMFQxCzAJBgNVBAYTAkdCMRgwFgYDVQQKEw9TZWN0aWdvIExpbWl0ZWQx
-# KzApBgNVBAMTIlNlY3RpZ28gUHVibGljIENvZGUgU2lnbmluZyBDQSBSMzYCEBHh
-# oIZkh66CYIKNKPBResYwDQYJYIZIAWUDBAIBBQCgfDAQBgorBgEEAYI3AgEMMQIw
-# ADAZBgkqhkiG9w0BCQMxDAYKKwYBBAGCNwIBBDAcBgorBgEEAYI3AgELMQ4wDAYK
-# KwYBBAGCNwIBFTAvBgkqhkiG9w0BCQQxIgQgwWSvZew59DX9KsiZvj+Z3VxJK7Yx
-# 7CK2nJrvF68UguswDQYJKoZIhvcNAQEBBQAEggIAp1Q9tHJ7e5LvVMUQyz9rD2FX
-# SaIWMxmzeksEdoz18LKZoF5a4wUbmIo/aGlg3Nm1DyNx3iSKzmk4XfaXL1hYwzad
-# yCsGiVXb5JZPKoU8laV6NR2WnPirdSPPcsPNm8iWRK57S6BlwYC2rBRlRVeHwQxn
-# aWRs5lJN6PUT1HBW9lXSxhUh+Ysph8UlukAGGaYRMX5NC0elldE31wwQoN24I7sn
-# vZdnhF8TttaS+x86gHQTQne3PoZ58ZN+EnVwV2rBJ3BHqFzWMJ7D9cpwB8bzEHeO
-# dO6kPrzQoU9vxcAQ9gXiO+zZlKk+SjPzFumiHqjw50BM3DQK4APIcQDQSIihOXxZ
-# IxqeJJlZcc9ul79dhU9ZkZjcHbl6p4MDKsf+GZixZFQja59muYViof0YakIMPd+u
-# /+GUL8Z0iu6OSE4LBcdlIqghT3PXnpm6xNLfjqxQQ8DMtNvbK7pYccqWSGdW0GIf
-# Zs5T6Smz7EDn4cNrJb8MJMQcIlpBZ0mZhopligtf3IBg3pOkNdsshVxFeHJuUhKX
-# VeZtIw87r2trPWGKQs/00ZT8URdL/oMjBTdDSa2Q9RGdNtWLhZrmC9cm3b6c6Lvb
-# vqEjlgLfakcsG4dfPpSEcQtQRD18NcUAwlt3q5OIFsGlbGc1YJ2VKchBFfXqctTq
-# WEOBAU+jZvDuCUcBDBShghjYMIIY1AYKKwYBBAGCNwMDATGCGMQwghjABgkqhkiG
-# 9w0BBwKgghixMIIYrQIBAzEPMA0GCWCGSAFlAwQCAgUAMIH4BgsqhkiG9w0BCRAB
-# BKCB6ASB5TCB4gIBAQYKKwYBBAGyMQIBATAxMA0GCWCGSAFlAwQCAQUABCAjmZn0
-# CmG3J3pYbllzh1p3+1k5Id45hrLfsY1vveaSjwIVAPndcUzbInbl0NBvbNgyJroi
-# m5ILGA8yMDI1MDcwOTIwMTIxMFqgdqR0MHIxCzAJBgNVBAYTAkdCMRcwFQYDVQQI
-# Ew5XZXN0IFlvcmtzaGlyZTEYMBYGA1UEChMPU2VjdGlnbyBMaW1pdGVkMTAwLgYD
-# VQQDEydTZWN0aWdvIFB1YmxpYyBUaW1lIFN0YW1waW5nIFNpZ25lciBSMzagghME
-# MIIGYjCCBMqgAwIBAgIRAKQpO24e3denNAiHrXpOtyQwDQYJKoZIhvcNAQEMBQAw
-# VTELMAkGA1UEBhMCR0IxGDAWBgNVBAoTD1NlY3RpZ28gTGltaXRlZDEsMCoGA1UE
-# AxMjU2VjdGlnbyBQdWJsaWMgVGltZSBTdGFtcGluZyBDQSBSMzYwHhcNMjUwMzI3
-# MDAwMDAwWhcNMzYwMzIxMjM1OTU5WjByMQswCQYDVQQGEwJHQjEXMBUGA1UECBMO
-# V2VzdCBZb3Jrc2hpcmUxGDAWBgNVBAoTD1NlY3RpZ28gTGltaXRlZDEwMC4GA1UE
-# AxMnU2VjdGlnbyBQdWJsaWMgVGltZSBTdGFtcGluZyBTaWduZXIgUjM2MIICIjAN
-# BgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEA04SV9G6kU3jyPRBLeBIHPNyUgVNn
-# YayfsGOyYEXrn3+SkDYTLs1crcw/ol2swE1TzB2aR/5JIjKNf75QBha2Ddj+4NEP
-# KDxHEd4dEn7RTWMcTIfm492TW22I8LfH+A7Ehz0/safc6BbsNBzjHTt7FngNfhfJ
-# oYOrkugSaT8F0IzUh6VUwoHdYDpiln9dh0n0m545d5A5tJD92iFAIbKHQWGbCQNY
-# plqpAFasHBn77OqW37P9BhOASdmjp3IijYiFdcA0WQIe60vzvrk0HG+iVcwVZjz+
-# t5OcXGTcxqOAzk1frDNZ1aw8nFhGEvG0ktJQknnJZE3D40GofV7O8WzgaAnZmoUn
-# 4PCpvH36vD4XaAF2CjiPsJWiY/j2xLsJuqx3JtuI4akH0MmGzlBUylhXvdNVXcjA
-# uIEcEQKtOBR9lU4wXQpISrbOT8ux+96GzBq8TdbhoFcmYaOBZKlwPP7pOp5Mzx/U
-# MhyBA93PQhiCdPfIVOCINsUY4U23p4KJ3F1HqP3H6Slw3lHACnLilGETXRg5X/Fp
-# 8G8qlG5Y+M49ZEGUp2bneRLZoyHTyynHvFISpefhBCV0KdRZHPcuSL5OAGWnBjAl
-# RtHvsMBrI3AAA0Tu1oGvPa/4yeeiAyu+9y3SLC98gDVbySnXnkujjhIh+oaatsk/
-# oyf5R2vcxHahajMCAwEAAaOCAY4wggGKMB8GA1UdIwQYMBaAFF9Y7UwxeqJhQo1S
-# gLqzYZcZojKbMB0GA1UdDgQWBBSIYYyhKjdkgShgoZsx0Iz9LALOTzAOBgNVHQ8B
-# Af8EBAMCBsAwDAYDVR0TAQH/BAIwADAWBgNVHSUBAf8EDDAKBggrBgEFBQcDCDBK
-# BgNVHSAEQzBBMDUGDCsGAQQBsjEBAgEDCDAlMCMGCCsGAQUFBwIBFhdodHRwczov
-# L3NlY3RpZ28uY29tL0NQUzAIBgZngQwBBAIwSgYDVR0fBEMwQTA/oD2gO4Y5aHR0
-# cDovL2NybC5zZWN0aWdvLmNvbS9TZWN0aWdvUHVibGljVGltZVN0YW1waW5nQ0FS
-# MzYuY3JsMHoGCCsGAQUFBwEBBG4wbDBFBggrBgEFBQcwAoY5aHR0cDovL2NydC5z
-# ZWN0aWdvLmNvbS9TZWN0aWdvUHVibGljVGltZVN0YW1waW5nQ0FSMzYuY3J0MCMG
-# CCsGAQUFBzABhhdodHRwOi8vb2NzcC5zZWN0aWdvLmNvbTANBgkqhkiG9w0BAQwF
-# AAOCAYEAAoE+pIZyUSH5ZakuPVKK4eWbzEsTRJOEjbIu6r7vmzXXLpJx4FyGmcqn
-# FZoa1dzx3JrUCrdG5b//LfAxOGy9Ph9JtrYChJaVHrusDh9NgYwiGDOhyyJ2zRy3
-# +kdqhwtUlLCdNjFjakTSE+hkC9F5ty1uxOoQ2ZkfI5WM4WXA3ZHcNHB4V42zi7Jk
-# 3ktEnkSdViVxM6rduXW0jmmiu71ZpBFZDh7Kdens+PQXPgMqvzodgQJEkxaION5X
-# RCoBxAwWwiMm2thPDuZTzWp/gUFzi7izCmEt4pE3Kf0MOt3ccgwn4Kl2FIcQaV55
-# nkjv1gODcHcD9+ZVjYZoyKTVWb4VqMQy/j8Q3aaYd/jOQ66Fhk3NWbg2tYl5jhQC
-# uIsE55Vg4N0DUbEWvXJxtxQQaVR5xzhEI+BjJKzh3TQ026JxHhr2fuJ0mV68AluF
-# r9qshgwS5SpN5FFtaSEnAwqZv3IS+mlG50rK7W3qXbWwi4hmpylUfygtYLEdLQuk
-# NEX1jiOKMIIGFDCCA/ygAwIBAgIQeiOu2lNplg+RyD5c9MfjPzANBgkqhkiG9w0B
-# AQwFADBXMQswCQYDVQQGEwJHQjEYMBYGA1UEChMPU2VjdGlnbyBMaW1pdGVkMS4w
-# LAYDVQQDEyVTZWN0aWdvIFB1YmxpYyBUaW1lIFN0YW1waW5nIFJvb3QgUjQ2MB4X
-# DTIxMDMyMjAwMDAwMFoXDTM2MDMyMTIzNTk1OVowVTELMAkGA1UEBhMCR0IxGDAW
-# BgNVBAoTD1NlY3RpZ28gTGltaXRlZDEsMCoGA1UEAxMjU2VjdGlnbyBQdWJsaWMg
-# VGltZSBTdGFtcGluZyBDQSBSMzYwggGiMA0GCSqGSIb3DQEBAQUAA4IBjwAwggGK
-# AoIBgQDNmNhDQatugivs9jN+JjTkiYzT7yISgFQ+7yavjA6Bg+OiIjPm/N/t3nC7
-# wYUrUlY3mFyI32t2o6Ft3EtxJXCc5MmZQZ8AxCbh5c6WzeJDB9qkQVa46xiYEpc8
-# 1KnBkAWgsaXnLURoYZzksHIzzCNxtIXnb9njZholGw9djnjkTdAA83abEOHQ4ujO
-# GIaBhPXG2NdV8TNgFWZ9BojlAvflxNMCOwkCnzlH4oCw5+4v1nssWeN1y4+RlaOy
-# wwRMUi54fr2vFsU5QPrgb6tSjvEUh1EC4M29YGy/SIYM8ZpHadmVjbi3Pl8hJiTW
-# w9jiCKv31pcAaeijS9fc6R7DgyyLIGflmdQMwrNRxCulVq8ZpysiSYNi79tw5RHW
-# ZUEhnRfs/hsp/fwkXsynu1jcsUX+HuG8FLa2BNheUPtOcgw+vHJcJ8HnJCrcUWhd
-# Fczf8O+pDiyGhVYX+bDDP3GhGS7TmKmGnbZ9N+MpEhWmbiAVPbgkqykSkzyYVr15
-# OApZYK8CAwEAAaOCAVwwggFYMB8GA1UdIwQYMBaAFPZ3at0//QET/xahbIICL9AK
-# PRQlMB0GA1UdDgQWBBRfWO1MMXqiYUKNUoC6s2GXGaIymzAOBgNVHQ8BAf8EBAMC
-# AYYwEgYDVR0TAQH/BAgwBgEB/wIBADATBgNVHSUEDDAKBggrBgEFBQcDCDARBgNV
-# HSAECjAIMAYGBFUdIAAwTAYDVR0fBEUwQzBBoD+gPYY7aHR0cDovL2NybC5zZWN0
-# aWdvLmNvbS9TZWN0aWdvUHVibGljVGltZVN0YW1waW5nUm9vdFI0Ni5jcmwwfAYI
-# KwYBBQUHAQEEcDBuMEcGCCsGAQUFBzAChjtodHRwOi8vY3J0LnNlY3RpZ28uY29t
-# L1NlY3RpZ29QdWJsaWNUaW1lU3RhbXBpbmdSb290UjQ2LnA3YzAjBggrBgEFBQcw
-# AYYXaHR0cDovL29jc3Auc2VjdGlnby5jb20wDQYJKoZIhvcNAQEMBQADggIBABLX
-# eyCtDjVYDJ6BHSVY/UwtZ3Svx2ImIfZVVGnGoUaGdltoX4hDskBMZx5NY5L6SCcw
-# DMZhHOmbyMhyOVJDwm1yrKYqGDHWzpwVkFJ+996jKKAXyIIaUf5JVKjccev3w16m
-# NIUlNTkpJEor7edVJZiRJVCAmWAaHcw9zP0hY3gj+fWp8MbOocI9Zn78xvm9XKGB
-# p6rEs9sEiq/pwzvg2/KjXE2yWUQIkms6+yslCRqNXPjEnBnxuUB1fm6bPAV+Tsr/
-# Qrd+mOCJemo06ldon4pJFbQd0TQVIMLv5koklInHvyaf6vATJP4DfPtKzSBPkKlO
-# tyaFTAjD2Nu+di5hErEVVaMqSVbfPzd6kNXOhYm23EWm6N2s2ZHCHVhlUgHaC4AC
-# MRCgXjYfQEDtYEK54dUwPJXV7icz0rgCzs9VI29DwsjVZFpO4ZIVR33LwXyPDbYF
-# kLqYmgHjR3tKVkhh9qKV2WCmBuC27pIOx6TYvyqiYbntinmpOqh/QPAnhDgexKG9
-# GX/n1PggkGi9HCapZp8fRwg8RftwS21Ln61euBG0yONM6noD2XQPrFwpm3GcuqJM
-# f0o8LLrFkSLRQNwxPDDkWXhW+gZswbaiie5fd/W2ygcto78XCSPfFWveUOSZ5SqK
-# 95tBO8aTHmEa4lpJVD7HrTEn9jb1EGvxOb1cnn0CMIIGgjCCBGqgAwIBAgIQNsKw
-# vXwbOuejs902y8l1aDANBgkqhkiG9w0BAQwFADCBiDELMAkGA1UEBhMCVVMxEzAR
-# BgNVBAgTCk5ldyBKZXJzZXkxFDASBgNVBAcTC0plcnNleSBDaXR5MR4wHAYDVQQK
-# ExVUaGUgVVNFUlRSVVNUIE5ldHdvcmsxLjAsBgNVBAMTJVVTRVJUcnVzdCBSU0Eg
-# Q2VydGlmaWNhdGlvbiBBdXRob3JpdHkwHhcNMjEwMzIyMDAwMDAwWhcNMzgwMTE4
-# MjM1OTU5WjBXMQswCQYDVQQGEwJHQjEYMBYGA1UEChMPU2VjdGlnbyBMaW1pdGVk
-# MS4wLAYDVQQDEyVTZWN0aWdvIFB1YmxpYyBUaW1lIFN0YW1waW5nIFJvb3QgUjQ2
-# MIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEAiJ3YuUVnnR3d6LkmgZpU
-# VMB8SQWbzFoVD9mUEES0QUCBdxSZqdTkdizICFNeINCSJS+lV1ipnW5ihkQyC0cR
-# LWXUJzodqpnMRs46npiJPHrfLBOifjfhpdXJ2aHHsPHggGsCi7uE0awqKggE/LkY
-# w3sqaBia67h/3awoqNvGqiFRJ+OTWYmUCO2GAXsePHi+/JUNAax3kpqstbl3vcTd
-# OGhtKShvZIvjwulRH87rbukNyHGWX5tNK/WABKf+Gnoi4cmisS7oSimgHUI0Wn/4
-# elNd40BFdSZ1EwpuddZ+Wr7+Dfo0lcHflm/FDDrOJ3rWqauUP8hsokDoI7D/yUVI
-# 9DAE/WK3Jl3C4LKwIpn1mNzMyptRwsXKrop06m7NUNHdlTDEMovXAIDGAvYynPt5
-# lutv8lZeI5w3MOlCybAZDpK3Dy1MKo+6aEtE9vtiTMzz/o2dYfdP0KWZwZIXbYsT
-# Ilg1YIetCpi5s14qiXOpRsKqFKqav9R1R5vj3NgevsAsvxsAnI8Oa5s2oy25qhso
-# BIGo/zi6GpxFj+mOdh35Xn91y72J4RGOJEoqzEIbW3q0b2iPuWLA911cRxgY5SJY
-# ubvjay3nSMbBPPFsyl6mY4/WYucmyS9lo3l7jk27MAe145GWxK4O3m3gEFEIkv7k
-# RmefDR7Oe2T1HxAnICQvr9sCAwEAAaOCARYwggESMB8GA1UdIwQYMBaAFFN5v1qq
-# K0rPVIDh2JvAnfKyA2bLMB0GA1UdDgQWBBT2d2rdP/0BE/8WoWyCAi/QCj0UJTAO
-# BgNVHQ8BAf8EBAMCAYYwDwYDVR0TAQH/BAUwAwEB/zATBgNVHSUEDDAKBggrBgEF
-# BQcDCDARBgNVHSAECjAIMAYGBFUdIAAwUAYDVR0fBEkwRzBFoEOgQYY/aHR0cDov
-# L2NybC51c2VydHJ1c3QuY29tL1VTRVJUcnVzdFJTQUNlcnRpZmljYXRpb25BdXRo
-# b3JpdHkuY3JsMDUGCCsGAQUFBwEBBCkwJzAlBggrBgEFBQcwAYYZaHR0cDovL29j
-# c3AudXNlcnRydXN0LmNvbTANBgkqhkiG9w0BAQwFAAOCAgEADr5lQe1oRLjlocXU
-# EYfktzsljOt+2sgXke3Y8UPEooU5y39rAARaAdAxUeiX1ktLJ3+lgxtoLQhn5cFb
-# 3GF2SSZRX8ptQ6IvuD3wz/LNHKpQ5nX8hjsDLRhsyeIiJsms9yAWnvdYOdEMq1W6
-# 1KE9JlBkB20XBee6JaXx4UBErc+YuoSb1SxVf7nkNtUjPfcxuFtrQdRMRi/fInV/
-# AobE8Gw/8yBMQKKaHt5eia8ybT8Y/Ffa6HAJyz9gvEOcF1VWXG8OMeM7Vy7Bs6mS
-# IkYeYtddU1ux1dQLbEGur18ut97wgGwDiGinCwKPyFO7ApcmVJOtlw9FVJxw/mL1
-# TbyBns4zOgkaXFnnfzg4qbSvnrwyj1NiurMp4pmAWjR+Pb/SIduPnmFzbSN/G8re
-# ZCL4fvGlvPFk4Uab/JVCSmj59+/mB2Gn6G/UYOy8k60mKcmaAZsEVkhOFuoj4we8
-# CYyaR9vd9PGZKSinaZIkvVjbH/3nlLb0a7SBIkiRzfPfS9T+JesylbHa1LtRV9U/
-# 7m0q7Ma2CQ/t392ioOssXW7oKLdOmMBl14suVFBmbzrt5V5cQPnwtd3UOTpS9oCG
-# +ZZheiIvPgkDmA8FzPsnfXW5qHELB43ET7HHFHeRPRYrMBKjkb8/IN7Po0d0hQoF
-# 4TeMM+zYAJzoKQnVKOLg8pZVPT8xggSSMIIEjgIBATBqMFUxCzAJBgNVBAYTAkdC
-# MRgwFgYDVQQKEw9TZWN0aWdvIExpbWl0ZWQxLDAqBgNVBAMTI1NlY3RpZ28gUHVi
-# bGljIFRpbWUgU3RhbXBpbmcgQ0EgUjM2AhEApCk7bh7d16c0CIetek63JDANBglg
-# hkgBZQMEAgIFAKCCAfkwGgYJKoZIhvcNAQkDMQ0GCyqGSIb3DQEJEAEEMBwGCSqG
-# SIb3DQEJBTEPFw0yNTA3MDkyMDEyMTBaMD8GCSqGSIb3DQEJBDEyBDDV8yIe9Zpa
-# NqUXlWkmvRqqEKFNm//pZ4ccsXcRlwobzB4xtKMWOQ7mQGoFXTHr65YwggF6Bgsq
-# hkiG9w0BCRACDDGCAWkwggFlMIIBYTAWBBQ4yRSBEES03GY+k9R0S4FBhqm1sTCB
-# hwQUxq5U5HiG8Xw9VRJIjGnDSnr5wt0wbzBbpFkwVzELMAkGA1UEBhMCR0IxGDAW
-# BgNVBAoTD1NlY3RpZ28gTGltaXRlZDEuMCwGA1UEAxMlU2VjdGlnbyBQdWJsaWMg
-# VGltZSBTdGFtcGluZyBSb290IFI0NgIQeiOu2lNplg+RyD5c9MfjPzCBvAQUhT1j
-# LZOCgmF80JA1xJHeksFC2scwgaMwgY6kgYswgYgxCzAJBgNVBAYTAlVTMRMwEQYD
-# VQQIEwpOZXcgSmVyc2V5MRQwEgYDVQQHEwtKZXJzZXkgQ2l0eTEeMBwGA1UEChMV
-# VGhlIFVTRVJUUlVTVCBOZXR3b3JrMS4wLAYDVQQDEyVVU0VSVHJ1c3QgUlNBIENl
-# cnRpZmljYXRpb24gQXV0aG9yaXR5AhA2wrC9fBs656Oz3TbLyXVoMA0GCSqGSIb3
-# DQEBAQUABIICAJPAH1jJ+97TBHEWtAj2NdF5P9m/0QS5Mk4nQ1cJMy5RWDjNKSBV
-# 43ckOUH+3ucCzKT7pRWWjwp27qAT3v0FeV/2GilKPCopg59jNNa1h/FNCHdW9Yhh
-# MdxwazBD4HVPZ7rm5YEb533GgEj5xgxEUEEeajVOI8GWoO21gp1WiIx1gTUMrhqe
-# BkWWNK5SoX0cNIl5p5p+4/hYEON3ExiCztGGmZKpau5zigTH8ZPU4p/BfUFgNcyi
-# jM8GsUJpOpDo+39EHUGZAax9zEh4nwOkKP2Ry5JZFgO6iebIgFZB8x2UI9dqdbi9
-# nL5v4er2fJw3xsdDIT/5QHgMIxgufCdTV03VKWkhMK4evIBMJTxgPKUfLZA/wpn6
-# BHRg37PvN8YFrbYEru1Kno+sFlU016eMBnJ5lpSPLdY32JFvEymk22999Ne7IEvl
-# NceDQnFflN/zEhkdAznI6du/JCPhFsmb39Rba5vGpDc7DGcLEZvQMOTVfP5+rSK/
-# /t9vwsFyFX4gFM6l91vYnb05pQ9ez1tm1W9llXuzF+WiTKpaUDauaHOrGGdnv8mA
-# ZOaqkOYrzt6Rd8FC5se8a/9vB1SEG8riNes+0LMmqCo1ppV7r7k4glFtaF59wqT3
-# kGl3ILyEVigQDsU59XduGwZnD+fzfEJi/JdpX2yiFSposeHY7ISCGCpt
-# SIG # End signature block
+} while ($choice -ne 13)
+
