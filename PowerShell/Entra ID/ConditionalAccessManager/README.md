@@ -10,26 +10,6 @@ A PowerShell module for managing deleted Conditional Access policies in Microsof
 - **Export policies** - Backup active and/or deleted policies to JSON
 - **Interactive console** - Menu-driven interface for easy management
 
-## Module Structure
-
-```
-ConditionalAccessManager/
-├── ConditionalAccessManager.psd1    # Module manifest
-├── ConditionalAccessManager.psm1    # Main module file (imports Private/Public)
-├── Private/                          # Internal helper functions
-│   └── Invoke-GraphRequest.ps1      # Graph API wrapper
-├── Public/                           # Exported module functions
-│   ├── Get-DeletedConditionalAccessPolicies.ps1
-│   ├── Restore-ConditionalAccessPolicy.ps1
-│   ├── Remove-DeletedConditionalAccessPolicy.ps1
-│   ├── Export-ConditionalAccessPolicies.ps1
-│   └── Start-ConditionalAccessManagerConsole.ps1
-├── Tests/                            # Pester tests
-│   ├── *.Tests.ps1                  # Individual function tests
-│   └── README.md                    # Testing documentation
-└── README.md                        # This file
-```
-
 ## Prerequisites
 
 - PowerShell 5.1 or higher
@@ -82,55 +62,12 @@ Remove-DeletedConditionalAccessPolicy -PolicyId "12345678-1234-1234-1234-1234567
 Export-ConditionalAccessPolicies -OutputPath "C:\backup\ca-policies.json" -IncludeActive -IncludeDeleted
 ```
 
-## Examples
-
-### Basic Policy Recovery
-
-```powershell
-# Connect to Graph
-Connect-MgGraph
-
-# List deleted policies
-$deletedPolicies = Get-DeletedConditionalAccessPolicies
-$deletedPolicies | Format-Table
-
-# Restore the first policy
-if ($deletedPolicies.Count -gt 0) {
-    Restore-ConditionalAccessPolicy -PolicyId $deletedPolicies[0].id
-}
-```
-
-### Bulk Operations
-
-```powershell
-# Get all deleted policies and restore them
-Get-DeletedConditionalAccessPolicies | ForEach-Object {
-    Write-Host "Restoring: $($_.displayName)"
-    Restore-ConditionalAccessPolicy -PolicyId $_.id
-}
-```
-
 ### Export and Backup
 
 ```powershell
 # Create comprehensive backup
 $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
 Export-ConditionalAccessPolicies -OutputPath ".\CA-Backup-$timestamp.json" -IncludeActive -IncludeDeleted
-```
-
-## Testing
-
-The module includes comprehensive Pester tests:
-
-```powershell
-# Install Pester if needed
-Install-Module Pester -Force
-
-# Run all tests
-Invoke-Pester -Path ".\Tests"
-
-# Run with detailed output
-Invoke-Pester -Path ".\Tests" -Output Detailed
 ```
 
 ## Error Handling
@@ -147,7 +84,6 @@ The module includes comprehensive error handling:
 - Always use least-privilege permissions
 - Regularly audit restored policies
 - Keep backups of policy configurations
-- Test in non-production environments first
 
 ## Contributing
 
@@ -170,23 +106,7 @@ For issues and questions:
 
 ## Version History
 
-- **v2.0.0** - Organized folder structure with Private/Public separation and comprehensive testing
-- **v1.0.0** - Initial release with basic functionality
-Start-ConditionalAccessManagerConsole
-
-# Or use individual functions
-Get-DeletedConditionalAccessPolicies
-Restore-ConditionalAccessPolicy -PolicyId "policy-guid"
-```
-
-## Functions
-
-- `Get-DeletedConditionalAccessPolicies` - List all deleted policies
-- `Get-ActiveConditionalAccessPolicies` - List active policies
-- `Restore-ConditionalAccessPolicy` - Restore a deleted policy
-- `Remove-DeletedConditionalAccessPolicy` - Permanently delete a policy
-- `Export-ConditionalAccessPolicies` - Export policies to JSON
-- `Start-ConditionalAccessManagerConsole` - Interactive menu
+See CHANGELOG.MD
 
 ## License
 
