@@ -5,7 +5,7 @@
      Created by:    Michael Morten Sonne
      Organization:  Sonne´s Cloud
      Filename:      CreateMissingServicePrincipals.ps1
-     Version:       1.2
+     Version:       1.4
     ===========================================================================
     .SYNOPSIS
         Script to register missing Entra ID Enterprise Applications.
@@ -20,6 +20,14 @@
 
     .PARAMETER WhatIf
         Shows what would happen if the script runs without making actual changes.
+
+    .PARAMETER ExportPath
+        Optional path to export the per-application results. Use a .json extension for JSON
+        output, otherwise the results are exported as CSV.
+
+    .PARAMETER LogPath
+        Optional path to a log file. When supplied, all log messages are also written to this file
+        via a thread-safe logging function.
 
     .NOTES
         Requires:    Microsoft.Graph.Authentication, Microsoft.Graph.Applications
@@ -41,11 +49,17 @@
     .EXAMPLE
         .\CreateMissingServicePrincipals.ps1 -TenantId "00000000-0000-0000-0000-000000000000"
         Register missing Enterprise Applications in a specific tenant
+
+    .EXAMPLE
+        .\CreateMissingServicePrincipals.ps1 -ExportPath "C:\Reports\ServicePrincipals.csv" -LogPath "C:\Logs\ServicePrincipals.log"
+        Register missing Enterprise Applications, export the per-application results to CSV and log the console output to a file
 #>
 
 [CmdletBinding(SupportsShouldProcess)]
 param(
- [string]$TenantId
+ [string]$TenantId,
+ [string]$ExportPath,
+ [string]$LogPath
 )
 
 #region Variables
@@ -126,27 +140,115 @@ $APPIDs = @(
 
 #region Functions
 
+#
+# Function: Logging with Console Output (thread safe)
+#
+# This function will log messages to the console and a log file.
+# It uses a global lock object to ensure thread safety.
+# Input parameters:
+# - Message: The message to log.
+# - Level: The log level (ERROR, WARNING, INFO, DEBUG, SUCCESS). Default is INFO.
+# - Color: Overrides the level's default console color (used for custom-formatted rows/tables).
+# - NoPrefix: Skips the "[timestamp] [Level]" prefix (used for pre-formatted lines like table rows).
+# - NoNewline: Keeps the cursor on the same line (used to combine multiple colors on one row).
+function Write-Log {
+    param (
+        [string]$Message,
+        [ValidateSet("ERROR", "WARNING", "INFO", "DEBUG", "SUCCESS")]
+        [string]$Level = "INFO",
+        [System.ConsoleColor]$Color,
+        [switch]$NoPrefix,
+        [switch]$NoNewline
+    )
+
+    $levels = @("ERROR", "WARNING", "INFO", "DEBUG")
+    $currentIndex = $levels.IndexOf($script:LogLevel.ToUpper())
+    $messageIndex = $levels.IndexOf($Level.ToUpper())
+
+    [System.Threading.Monitor]::Enter($script:LogLockObject)
+    try {
+        $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+        $logMessage = if ($NoPrefix) { $Message } else { "[$timestamp] [$Level] $Message" }
+
+        if ($messageIndex -le $currentIndex -or $Level -eq "SUCCESS") {
+            $consoleColor = if ($PSBoundParameters.ContainsKey('Color')) {
+                $Color
+            }
+            else {
+                switch ($Level) {
+                    "ERROR" { "Red" }
+                    "WARNING" { "Yellow" }
+                    "INFO" { "Gray" }
+                    "DEBUG" { "Cyan" }
+                    "SUCCESS" { "Green" }
+                }
+            }
+            if ($NoNewline) {
+                Write-Host $logMessage -ForegroundColor $consoleColor -NoNewline
+            }
+            else {
+                Write-Host $logMessage -ForegroundColor $consoleColor
+            }
+        }
+
+        if ($script:LogFilePath) {
+            $fileStream = [System.IO.File]::Open($script:LogFilePath, [System.IO.FileMode]::Append, [System.IO.FileAccess]::Write, [System.IO.FileShare]::Read)
+            $streamWriter = New-Object System.IO.StreamWriter($fileStream)
+            try {
+                if ($NoNewline) {
+                    $streamWriter.Write($logMessage)
+                }
+                else {
+                    $streamWriter.WriteLine($logMessage)
+                }
+            }
+            finally {
+                $streamWriter.Close()
+                $fileStream.Close()
+            }
+        }
+    }
+    finally {
+        [System.Threading.Monitor]::Exit($script:LogLockObject)
+    }
+}
+
 function Write-Step {
     param([string]$Message)
-    Write-Host "`n==== $Message ====" -ForegroundColor Cyan
+    Write-Log -Message "`n==== $Message ====" -Color Cyan -NoPrefix
 }
 
 function Write-Success {
     param([string]$Message)
-    Write-Host "[OK] $Message" -ForegroundColor Green
+    Write-Log -Message $Message -Level SUCCESS
 }
 
 function Write-Warning {
     param([string]$Message)
-    Write-Host "[WARNING]  $Message" -ForegroundColor Yellow
+    Write-Log -Message $Message -Level WARNING
 }
 
 function Write-Error {
     param([string]$Message)
-    Write-Host "[ERROR] $Message" -ForegroundColor Red
+    Write-Log -Message $Message -Level ERROR
 }
 
 #endregion
+
+# Set up thread-safe logging
+$script:LogLevel = 'INFO'
+$script:LogFilePath = $null
+$script:LogLockObject = [object]::new()
+
+if ($LogPath) {
+    # Resolve to an absolute path: .NET file APIs use the process directory, not PowerShell's $PWD
+    $script:LogFilePath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($LogPath)
+    $logDir = Split-Path -Path $script:LogFilePath -Parent
+    if ($logDir -and -not (Test-Path -Path $logDir)) {
+        New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+    }
+    Write-Log -Message "[INFORMATION]  Logging console output to: $script:LogFilePath" -Color Cyan -NoPrefix
+}
 
 # Check if required modules are installed
 Write-Step "Checking required modules"
@@ -170,14 +272,13 @@ foreach ($module in $requiredModules) {
         if ($_.Exception.Message -match 'Could not load file or assembly' -or
             $_.Exception.InnerException.Message -match 'Could not load file or assembly') {
             Write-Error "Module version mismatch detected for $module"
-            Write-Host "  One or more Microsoft.Graph sub-modules are at conflicting versions." -ForegroundColor Yellow
-            Write-Host "  Fix: Reinstall all Microsoft.Graph modules cleanly:" -ForegroundColor Yellow
-            Write-Host "    Get-InstalledModule Microsoft.Graph* | Uninstall-Module -AllVersions -Force" -ForegroundColor Gray
-            Write-Host "    Install-Module Microsoft.Graph -Scope CurrentUser -Force" -ForegroundColor Gray
+            Write-Log -Message "  One or more Microsoft.Graph sub-modules are at conflicting versions." -Level WARNING -NoPrefix
+            Write-Log -Message "  Fix: Reinstall all Microsoft.Graph modules cleanly:" -Level WARNING -NoPrefix
+            Write-Log -Message "    Get-InstalledModule Microsoft.Graph* | Uninstall-Module -AllVersions -Force" -NoPrefix
+            Write-Log -Message "    Install-Module Microsoft.Graph -Scope CurrentUser -Force" -NoPrefix
         }
         else {
-            Write-Error "Failed to import module $module"
-            Write-Host "Error: $($_.Exception.Message)" -ForegroundColor Red
+            Write-Error "Failed to import module $module`: $($_.Exception.Message)"
         }
         exit 1
     }
@@ -208,24 +309,23 @@ try {
         
     # Verify tenant context
     $context = Get-MgContext
-    Write-Host "  Tenant: $($context.TenantId)" -ForegroundColor Gray
-    Write-Host "  Account: $($context.Account)" -ForegroundColor Gray
+    Write-Log -Message "  Tenant: $($context.TenantId)" -NoPrefix
+    Write-Log -Message "  Account: $($context.Account)" -NoPrefix
 }
 catch {
-    Write-Error "Failed to connect to Microsoft Graph"
-    Write-Host "Error: $($_.Exception.Message)" -ForegroundColor Red
+    Write-Error "Failed to connect to Microsoft Graph: $($_.Exception.Message)"
     exit 1
 }
 
 # Register Enterprise applications
 Write-Step "Checking Enterprise Applications"
-Write-Host "[INFORMATION]  Checking $($APPIDs.Count) application(s)" -ForegroundColor Cyan
+Write-Log -Message "[INFORMATION]  Checking $($APPIDs.Count) application(s)" -Color Cyan -NoPrefix
 
 # Fetch all service principals once for performance
-Write-Host "[INFORMATION]  Fetching existing service principals..." -ForegroundColor Cyan
+Write-Log -Message "[INFORMATION]  Fetching existing service principals..." -Color Cyan -NoPrefix
 try {
     $allServicePrincipals = Get-MgServicePrincipal -All -Property AppId, DisplayName, Id
-    Write-Host "[INFORMATION]  Found $($allServicePrincipals.Count) existing service principals" -ForegroundColor Cyan
+    Write-Log -Message "[INFORMATION]  Found $($allServicePrincipals.Count) existing service principals" -Color Cyan -NoPrefix
     
     # Build hashtable for O(1) lookup by AppId
     $spLookup = @{}
@@ -238,13 +338,12 @@ catch {
     $innerMsg = $_.Exception.InnerExceptions | ForEach-Object { $_.Message } | Where-Object { $_ -match 'Could not load file or assembly' }
     if ($innerMsg -or $_.Exception.Message -match 'Could not load file or assembly') {
         Write-Error "Microsoft.Graph module version mismatch - assembly could not be loaded"
-        Write-Host "  Fix: Reinstall all Microsoft.Graph modules cleanly:" -ForegroundColor Yellow
-        Write-Host "    Get-InstalledModule Microsoft.Graph* | Uninstall-Module -AllVersions -Force" -ForegroundColor Gray
-        Write-Host "    Install-Module Microsoft.Graph -Scope CurrentUser -Force" -ForegroundColor Gray
+        Write-Log -Message "  Fix: Reinstall all Microsoft.Graph modules cleanly:" -Level WARNING -NoPrefix
+        Write-Log -Message "    Get-InstalledModule Microsoft.Graph* | Uninstall-Module -AllVersions -Force" -NoPrefix
+        Write-Log -Message "    Install-Module Microsoft.Graph -Scope CurrentUser -Force" -NoPrefix
     }
     else {
-        Write-Error "Failed to fetch service principals"
-        Write-Host "Error: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Error "Failed to fetch service principals: $($_.Exception.Message)"
     }
     exit 1
 }
@@ -254,6 +353,7 @@ $createdCount = 0
 $toCreateCount = 0   # counts SPs that would be created under -WhatIf
 $failedCount = 0
 $skippedCount = 0
+$results = [System.Collections.Generic.List[pscustomobject]]::new()
 
 Write-Host ""
 
@@ -266,9 +366,10 @@ foreach ($app in $APPIDs) {
         if ($spLookup.ContainsKey($ID)) {
             $ExistingApp = $spLookup[$ID]
             $DisplayName = $ExistingApp.DisplayName
-            Write-Host "  [OK]  $DisplayName" -ForegroundColor Gray -NoNewline
-            Write-Host " [$ID]" -ForegroundColor DarkGray
+            Write-Log -Message "  [OK]  $DisplayName" -NoPrefix -NoNewline
+            Write-Log -Message " [$ID]" -Color DarkGray -NoPrefix
             $existingCount++
+            $results.Add([pscustomobject]@{ AppId = $ID; ExpectedName = $ExpectedName; DisplayName = $DisplayName; Status = 'AlreadyExisting'; Details = $null })
         }
         else {
             if ($PSCmdlet.ShouldProcess("Service Principal $ID", "Create")) {
@@ -278,11 +379,13 @@ foreach ($app in $APPIDs) {
                 $newApp = New-MgServicePrincipal -BodyParameter $ServicePrincipalId -ErrorAction Stop
                 Write-Success "$($newApp.DisplayName) [$ID]"
                 $createdCount++
+                $results.Add([pscustomobject]@{ AppId = $ID; ExpectedName = $ExpectedName; DisplayName = $newApp.DisplayName; Status = 'Created'; Details = $null })
             }
             else {
-                Write-Host "  Will add: $ExpectedName" -ForegroundColor Magenta -NoNewline
-                Write-Host " [$ID]" -ForegroundColor DarkMagenta
+                Write-Log -Message "  Will add: $ExpectedName" -Color Magenta -NoPrefix -NoNewline
+                Write-Log -Message " [$ID]" -Color DarkMagenta -NoPrefix
                 $toCreateCount++
+                $results.Add([pscustomobject]@{ AppId = $ID; ExpectedName = $ExpectedName; DisplayName = $null; Status = 'WouldCreate'; Details = $null })
             }
         }
     }
@@ -290,22 +393,25 @@ foreach ($app in $APPIDs) {
         # Some Microsoft first-party AppIds cannot be instantiated as SPs in a tenant
         if ($_.Exception.Message -match 'does not reference a valid application object' -or
             $_.FullyQualifiedErrorId -match 'Request_BadRequest') {
-            Write-Host "  [SKIP] AppId not available for instantiation: $ExpectedName" -ForegroundColor Yellow -NoNewline
-            Write-Host " [$ID]" -ForegroundColor DarkYellow
+            Write-Log -Message "  [SKIP] AppId not available for instantiation: $ExpectedName" -Level WARNING -NoPrefix -NoNewline
+            Write-Log -Message " [$ID]" -Color DarkYellow -NoPrefix
             $skippedCount++
+            $results.Add([pscustomobject]@{ AppId = $ID; ExpectedName = $ExpectedName; DisplayName = $null; Status = 'Skipped'; Details = $_.Exception.Message })
         }
         elseif ($_.Exception.Message -match 'already in use' -or
                 $_.FullyQualifiedErrorId -match 'Request_MultipleObjectsWithSameKeyValue') {
             # 409 — created by a parallel process or duplicate entry in the list
-            Write-Host "  [OK]  $ExpectedName" -ForegroundColor Gray -NoNewline
-            Write-Host " [$ID]" -ForegroundColor DarkGray
+            Write-Log -Message "  [OK]  $ExpectedName" -NoPrefix -NoNewline
+            Write-Log -Message " [$ID]" -Color DarkGray -NoPrefix
             $existingCount++
+            $results.Add([pscustomobject]@{ AppId = $ID; ExpectedName = $ExpectedName; DisplayName = $null; Status = 'AlreadyExisting'; Details = $null })
         }
         else {
-            Write-Host "  [ERROR] Failed to process" -ForegroundColor Red -NoNewline
-            Write-Host " $ExpectedName [$ID]" -ForegroundColor DarkRed
-            Write-Host "     Error: $($_.Exception.Message)" -ForegroundColor DarkRed
+            Write-Log -Message "  [ERROR] Failed to process" -Level ERROR -NoPrefix -NoNewline
+            Write-Log -Message " $ExpectedName [$ID]" -Color DarkRed -NoPrefix
+            Write-Log -Message "     Error: $($_.Exception.Message)" -Color DarkRed -NoPrefix
             $failedCount++
+            $results.Add([pscustomobject]@{ AppId = $ID; ExpectedName = $ExpectedName; DisplayName = $null; Status = 'Failed'; Details = $_.Exception.Message })
         }
     }
 }
@@ -313,31 +419,47 @@ foreach ($app in $APPIDs) {
 # Summary
 Write-Step "Configuration Complete"
 
-Write-Host "`n Summary:" -ForegroundColor Cyan
-Write-Host "  Total applications checked: $($APPIDs.Count)" -ForegroundColor White
+Write-Log -Message "`n Summary:" -Color Cyan -NoPrefix
+Write-Log -Message "  Total applications checked: $($APPIDs.Count)" -Color White -NoPrefix
 
 if ($existingCount -gt 0) {
-    Write-Host "  Already existing: $existingCount" -ForegroundColor Gray
+    Write-Log -Message "  Already existing: $existingCount" -NoPrefix
 }
 if ($createdCount -gt 0) {
-    Write-Host "  Successfully created: $createdCount" -ForegroundColor Green
+    Write-Log -Message "  Successfully created: $createdCount" -Level SUCCESS -NoPrefix
 }
 if ($toCreateCount -gt 0) {
-    Write-Host "  Would be created (WhatIf): $toCreateCount" -ForegroundColor Magenta
+    Write-Log -Message "  Would be created (WhatIf): $toCreateCount" -Color Magenta -NoPrefix
 }
 if ($skippedCount -gt 0) {
-    Write-Host "  Skipped (AppId not globally instantiable): $skippedCount" -ForegroundColor Yellow
+    Write-Log -Message "  Skipped (AppId not globally instantiable): $skippedCount" -Level WARNING -NoPrefix
 }
 if ($failedCount -gt 0) {
-    Write-Host "  Failed: $failedCount" -ForegroundColor Red
+    Write-Log -Message "  Failed: $failedCount" -Level ERROR -NoPrefix
 }
 
 if ($toCreateCount -gt 0) {
-    Write-Host "`n Run without -WhatIf to create the missing service principals" -ForegroundColor Yellow
+    Write-Log -Message "`n Run without -WhatIf to create the missing service principals" -Level WARNING -NoPrefix
 }
 elseif ($createdCount -gt 0) {
-    Write-Host "`n[OK] Missing enterprise applications have been registered" -ForegroundColor Green
+    Write-Log -Message "`n[OK] Missing enterprise applications have been registered" -Level SUCCESS -NoPrefix
 }
 elseif ($existingCount -eq $APPIDs.Count) {
-    Write-Host "`n[OK] All enterprise applications are already registered" -ForegroundColor Green
+    Write-Log -Message "`n[OK] All enterprise applications are already registered" -Level SUCCESS -NoPrefix
+}
+
+# Export per-application results if requested
+if ($ExportPath) {
+    try {
+        if ($ExportPath -match '\.json$') {
+            $results | ConvertTo-Json -Depth 3 | Out-File -FilePath $ExportPath -Encoding UTF8
+        }
+        else {
+            $results | Export-Csv -Path $ExportPath -NoTypeInformation -Encoding UTF8
+        }
+        Write-Log -Message "`n[INFORMATION]  Results exported to: $ExportPath" -Color Cyan -NoPrefix
+    }
+    catch {
+        Write-Error "Failed to export results to $ExportPath`: $($_.Exception.Message)"
+    }
 }

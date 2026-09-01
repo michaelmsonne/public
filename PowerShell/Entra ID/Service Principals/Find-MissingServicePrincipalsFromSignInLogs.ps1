@@ -5,7 +5,7 @@
      Created by:    Michael Morten Sonne
      Organization:  Sonne´s Cloud
      Filename:      Find-MissingServicePrincipalsFromSignInLogs.ps1
-     Version:       1.1
+     Version:       1.3
     ===========================================================================
     .SYNOPSIS
         Identifies applications from sign-in logs that are missing as service principals in Entra ID.
@@ -36,6 +36,15 @@
     .PARAMETER SkipNonInteractive
         Skip querying non-interactive sign-in logs.
 
+    .PARAMETER ExportPath
+        Optional path to export the missing client apps and missing resources. Use a .json
+        extension for JSON output, otherwise the results are exported as CSV. Both sets are
+        combined into a single file distinguished by a Type column (ClientApp/Resource).
+
+    .PARAMETER LogPath
+        Optional path to a log file. When supplied, all log messages are also written to this file
+        via a thread-safe logging function.
+
     .NOTES
         Requires:    Microsoft.Graph.Authentication, Microsoft.Graph.Reports
         Permissions: AuditLog.Read.All, Application.Read.All
@@ -60,6 +69,10 @@
     .EXAMPLE
         .\Find-MissingServicePrincipalsFromSignInLogs.ps1 -TenantId "00000000-0000-0000-0000-000000000000"
         Check a specific tenant
+
+    .EXAMPLE
+        .\Find-MissingServicePrincipalsFromSignInLogs.ps1 -ExportPath "C:\Reports\MissingSPs.csv" -LogPath "C:\Logs\MissingSPs.log"
+        Check the last 24 hours, export the missing apps/resources to CSV, and log console output to a file
 #>
 
 [CmdletBinding()]
@@ -70,32 +83,125 @@ param(
     [datetime]$EndDate,
     [int]$Top = 500,
     [switch]$SkipInteractive,
-    [switch]$SkipNonInteractive
+    [switch]$SkipNonInteractive,
+    [string]$ExportPath,
+    [string]$LogPath
 )
 
 #region Functions
 
+#
+# Function: Logging with Console Output (thread safe)
+#
+# This function will log messages to the console and a log file.
+# It uses a global lock object to ensure thread safety.
+# Input parameters:
+# - Message: The message to log.
+# - Level: The log level (ERROR, WARNING, INFO, DEBUG, SUCCESS). Default is INFO.
+# - Color: Overrides the level's default console color (used for custom-formatted rows/tables).
+# - NoPrefix: Skips the "[timestamp] [Level]" prefix (used for pre-formatted lines like table rows).
+# - NoNewline: Keeps the cursor on the same line (used to combine multiple colors on one row).
+function Write-Log {
+    param (
+        [string]$Message,
+        [ValidateSet("ERROR", "WARNING", "INFO", "DEBUG", "SUCCESS")]
+        [string]$Level = "INFO",
+        [System.ConsoleColor]$Color,
+        [switch]$NoPrefix,
+        [switch]$NoNewline
+    )
+
+    $levels = @("ERROR", "WARNING", "INFO", "DEBUG")
+    $currentIndex = $levels.IndexOf($script:LogLevel.ToUpper())
+    $messageIndex = $levels.IndexOf($Level.ToUpper())
+
+    [System.Threading.Monitor]::Enter($script:LogLockObject)
+    try {
+        $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+        $logMessage = if ($NoPrefix) { $Message } else { "[$timestamp] [$Level] $Message" }
+
+        if ($messageIndex -le $currentIndex -or $Level -eq "SUCCESS") {
+            $consoleColor = if ($PSBoundParameters.ContainsKey('Color')) {
+                $Color
+            }
+            else {
+                switch ($Level) {
+                    "ERROR" { "Red" }
+                    "WARNING" { "Yellow" }
+                    "INFO" { "Gray" }
+                    "DEBUG" { "Cyan" }
+                    "SUCCESS" { "Green" }
+                }
+            }
+            if ($NoNewline) {
+                Write-Host $logMessage -ForegroundColor $consoleColor -NoNewline
+            }
+            else {
+                Write-Host $logMessage -ForegroundColor $consoleColor
+            }
+        }
+
+        if ($script:LogFilePath) {
+            $fileStream = [System.IO.File]::Open($script:LogFilePath, [System.IO.FileMode]::Append, [System.IO.FileAccess]::Write, [System.IO.FileShare]::Read)
+            $streamWriter = New-Object System.IO.StreamWriter($fileStream)
+            try {
+                if ($NoNewline) {
+                    $streamWriter.Write($logMessage)
+                }
+                else {
+                    $streamWriter.WriteLine($logMessage)
+                }
+            }
+            finally {
+                $streamWriter.Close()
+                $fileStream.Close()
+            }
+        }
+    }
+    finally {
+        [System.Threading.Monitor]::Exit($script:LogLockObject)
+    }
+}
+
 function Write-Step {
     param([string]$Message)
-    Write-Host "`n==== $Message ====" -ForegroundColor Cyan
+    Write-Log -Message "`n==== $Message ====" -Color Cyan -NoPrefix
 }
 
 function Write-Success {
     param([string]$Message)
-    Write-Host "[OK] $Message" -ForegroundColor Green
+    Write-Log -Message $Message -Level SUCCESS
 }
 
 function Write-Warning {
     param([string]$Message)
-    Write-Host "[WARNING]  $Message" -ForegroundColor Yellow
+    Write-Log -Message $Message -Level WARNING
 }
 
 function Write-Error {
     param([string]$Message)
-    Write-Host "[ERROR] $Message" -ForegroundColor Red
+    Write-Log -Message $Message -Level ERROR
 }
 
 #endregion Functions
+
+#region Start logging
+
+$script:LogLevel = 'INFO'
+$script:LogFilePath = $null
+$script:LogLockObject = [object]::new()
+
+if ($LogPath) {
+    # Resolve to an absolute path: .NET file APIs use the process directory, not PowerShell's $PWD
+    $script:LogFilePath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($LogPath)
+    $logDir = Split-Path -Path $script:LogFilePath -Parent
+    if ($logDir -and -not (Test-Path -Path $logDir)) {
+        New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+    }
+    Write-Log -Message "[INFORMATION]  Logging console output to: $script:LogFilePath" -Color Cyan -NoPrefix
+}
+
+#endregion
 
 #region Date range setup
 
@@ -143,13 +249,12 @@ foreach ($module in $requiredModules) {
         if ($_.Exception.Message -match 'Could not load file or assembly' -or
             $_.Exception.InnerException.Message -match 'Could not load file or assembly') {
             Write-Error "Module version mismatch detected for $module"
-            Write-Host "  Fix: Reinstall all Microsoft.Graph modules cleanly:" -ForegroundColor Yellow
-            Write-Host "    Get-InstalledModule Microsoft.Graph* | Uninstall-Module -AllVersions -Force" -ForegroundColor Gray
-            Write-Host "    Install-Module Microsoft.Graph -Scope CurrentUser -Force" -ForegroundColor Gray
+            Write-Log -Message "  Fix: Reinstall all Microsoft.Graph modules cleanly:" -Level WARNING -NoPrefix
+            Write-Log -Message "    Get-InstalledModule Microsoft.Graph* | Uninstall-Module -AllVersions -Force" -NoPrefix
+            Write-Log -Message "    Install-Module Microsoft.Graph -Scope CurrentUser -Force" -NoPrefix
         }
         else {
-            Write-Error "Failed to import module $module"
-            Write-Host "  Error: $($_.Exception.Message)" -ForegroundColor Red
+            Write-Error "Failed to import module $module`: $($_.Exception.Message)"
         }
         exit 1
     }
@@ -181,12 +286,11 @@ try {
     Write-Success "Connected to Microsoft Graph"
 
     $context = Get-MgContext
-    Write-Host "  Tenant: $($context.TenantId)" -ForegroundColor Gray
-    Write-Host "  Account: $($context.Account)" -ForegroundColor Gray
+    Write-Log -Message "  Tenant: $($context.TenantId)" -NoPrefix
+    Write-Log -Message "  Account: $($context.Account)" -NoPrefix
 }
 catch {
-    Write-Error "Failed to connect to Microsoft Graph"
-    Write-Host "  Error: $($_.Exception.Message)" -ForegroundColor Red
+    Write-Error "Failed to connect to Microsoft Graph: $($_.Exception.Message)"
     exit 1
 }
 
@@ -197,7 +301,7 @@ catch {
 Write-Step "Fetching existing service principals"
 
 try {
-    Write-Host "  Fetching all service principals..." -ForegroundColor Gray
+    Write-Log -Message "  Fetching all service principals..." -NoPrefix
     $allSp = Get-MgServicePrincipal -All -Property AppId, DisplayName, Id -ErrorAction Stop
 
     # Two lookups are needed because logs reference SPs differently:
@@ -212,8 +316,7 @@ try {
     Write-Success "Found $($spLookup.Count) existing service principals"
 }
 catch {
-    Write-Error "Failed to fetch service principals"
-    Write-Host "  Error: $($_.Exception.Message)" -ForegroundColor Red
+    Write-Error "Failed to fetch service principals: $($_.Exception.Message)"
     exit 1
 }
 
@@ -222,7 +325,7 @@ catch {
 #region Fetch sign-in logs
 
 Write-Step "Querying sign-in logs"
-Write-Host "  Period: $startIso  ->  $endIso" -ForegroundColor Gray
+Write-Log -Message "  Period: $startIso  ->  $endIso" -NoPrefix
 
 $interactiveLogs    = @()
 $nonInteractiveLogs = [System.Collections.Generic.List[object]]::new()
@@ -230,7 +333,7 @@ $resourcesFromLogs  = @{}
 
 # Interactive sign-in logs via Get-MgAuditLogSignIn
 if (-not $SkipInteractive) {
-    Write-Host "  Querying interactive logs..." -ForegroundColor Gray
+    Write-Log -Message "  Querying interactive logs..." -NoPrefix
     try {
         $interactiveFilter = "createdDateTime ge $startIso and createdDateTime lt $endIso"
         $interactiveLogs = Get-MgAuditLogSignIn `
@@ -241,17 +344,16 @@ if (-not $SkipInteractive) {
         Write-Success "$($interactiveLogs.Count) interactive log entries retrieved"
     }
     catch {
-        Write-Error "Failed to retrieve interactive logs"
-        Write-Host "  Error: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Error "Failed to retrieve interactive logs: $($_.Exception.Message)"
     }
 }
 else {
-    Write-Host "  [SKIP] Interactive logs skipped (-SkipInteractive)" -ForegroundColor DarkGray
+    Write-Log -Message "  [SKIP] Interactive logs skipped (-SkipInteractive)" -Color DarkGray -NoPrefix
 }
 
 # Non-interactive summarized logs via Invoke-MgGraphRequest (beta-only endpoint)
 if (-not $SkipNonInteractive) {
-    Write-Host "  Querying non-interactive logs..." -ForegroundColor Gray
+    Write-Log -Message "  Querying non-interactive logs..." -NoPrefix
     try {
         # getSummarizedNonInteractiveSignIns is a beta-only endpoint with no dedicated cmdlet
         $niBase = "https://graph.microsoft.com/beta/auditLogs/getSummarizedNonInteractiveSignIns(aggregationWindow='d1')"
@@ -265,19 +367,18 @@ if (-not $SkipNonInteractive) {
                 $nonInteractiveLogs.Add($entry)
             }
             $page++
-            Write-Host "  Page $page - retrieved $($nonInteractiveLogs.Count) entries so far" -ForegroundColor DarkGray
+            Write-Log -Message "  Page $page - retrieved $($nonInteractiveLogs.Count) entries so far" -Color DarkGray -NoPrefix
             $niUri = $response.'@odata.nextLink'
         } while ($niUri)
 
         Write-Success "$($nonInteractiveLogs.Count) non-interactive log entries retrieved"
     }
     catch {
-        Write-Error "Failed to retrieve non-interactive logs"
-        Write-Host "  Error: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Error "Failed to retrieve non-interactive logs: $($_.Exception.Message)"
     }
 }
 else {
-    Write-Host "  [SKIP] Non-interactive logs skipped (-SkipNonInteractive)" -ForegroundColor DarkGray
+    Write-Log -Message "  [SKIP] Non-interactive logs skipped (-SkipNonInteractive)" -Color DarkGray -NoPrefix
 }
 
 #endregion
@@ -347,8 +448,8 @@ foreach ($entry in $nonInteractiveLogs) {
     }
 }
 
-Write-Host "  Unique client apps seen in logs:  $($appsFromLogs.Count)" -ForegroundColor Gray
-Write-Host "  Unique resources seen in logs:    $($resourcesFromLogs.Count)" -ForegroundColor Gray
+Write-Log -Message "  Unique client apps seen in logs:  $($appsFromLogs.Count)" -NoPrefix
+Write-Log -Message "  Unique resources seen in logs:    $($resourcesFromLogs.Count)" -NoPrefix
 
 # Find client apps with no service principal (checked by AppId)
 $missingApps = [System.Collections.Generic.List[object]]::new()
@@ -385,44 +486,44 @@ foreach ($resourceId in $resourcesFromLogs.Keys) {
 Write-Step "Missing Client App Service Principals"
 
 if ($missingApps.Count -eq 0) {
-    Write-Host "`n[OK] All client applications seen in sign-in logs already have a service principal." -ForegroundColor Green
+    Write-Log -Message "`n[OK] All client applications seen in sign-in logs already have a service principal." -Level SUCCESS -NoPrefix
 }
 else {
-    Write-Host "  The following $($missingApps.Count) client app(s) appear in sign-in logs but have no service principal:`n" -ForegroundColor Yellow
+    Write-Log -Message "  The following $($missingApps.Count) client app(s) appear in sign-in logs but have no service principal:`n" -Level WARNING -NoPrefix
 
     $sorted = $missingApps | Sort-Object DisplayName
 
     foreach ($app in $sorted) {
-        Write-Host "  $($app.DisplayName)" -ForegroundColor White -NoNewline
-        Write-Host " [$($app.AppId)]" -ForegroundColor DarkGray -NoNewline
-        Write-Host "  ($($app.SeenIn))" -ForegroundColor DarkYellow
+        Write-Log -Message "  $($app.DisplayName)" -Color White -NoPrefix -NoNewline
+        Write-Log -Message " [$($app.AppId)]" -Color DarkGray -NoPrefix -NoNewline
+        Write-Log -Message "  ($($app.SeenIn))" -Color DarkYellow -NoPrefix
     }
 
     Write-Host ""
-    Write-Host "  To add these as entries in CreateMissingServicePrincipals.ps1, use:" -ForegroundColor Cyan
+    Write-Log -Message "  To add these as entries in CreateMissingServicePrincipals.ps1, use:" -Color Cyan -NoPrefix
     Write-Host ""
     foreach ($app in $sorted) {
         $safeName = if ($app.DisplayName) { $app.DisplayName } else { "Unknown" }
-        Write-Host "    @{ AppId = `"$($app.AppId)`"; ExpectedName = `"$safeName`" }" -ForegroundColor Gray
+        Write-Log -Message "    @{ AppId = `"$($app.AppId)`"; ExpectedName = `"$safeName`" }" -NoPrefix
     }
 }
 
 Write-Step "Missing Resource Service Principals"
 
 if ($missingResources.Count -eq 0) {
-    Write-Host "`n[OK] All resources seen in sign-in logs already have a service principal." -ForegroundColor Green
+    Write-Log -Message "`n[OK] All resources seen in sign-in logs already have a service principal." -Level SUCCESS -NoPrefix
 }
 else {
-    Write-Host "  The following $($missingResources.Count) resource(s) appear in sign-in logs but have no matching service principal:`n" -ForegroundColor Yellow
-    Write-Host "  [NOTE] Resource SPs cannot be auto-created - resourceId is an SP object ID, not an AppId." -ForegroundColor DarkCyan
-    Write-Host "         Investigate each entry manually and register via its AppId if available.`n" -ForegroundColor DarkCyan
+    Write-Log -Message "  The following $($missingResources.Count) resource(s) appear in sign-in logs but have no matching service principal:`n" -Level WARNING -NoPrefix
+    Write-Log -Message "  [NOTE] Resource SPs cannot be auto-created - resourceId is an SP object ID, not an AppId." -Color DarkCyan -NoPrefix
+    Write-Log -Message "         Investigate each entry manually and register via its AppId if available.`n" -Color DarkCyan -NoPrefix
 
     $sortedRes = $missingResources | Sort-Object DisplayName
 
     foreach ($res in $sortedRes) {
-        Write-Host "  $($res.DisplayName)" -ForegroundColor White -NoNewline
-        Write-Host " [SP Id: $($res.ResourceId)]" -ForegroundColor DarkGray -NoNewline
-        Write-Host "  ($($res.SeenIn))" -ForegroundColor DarkYellow
+        Write-Log -Message "  $($res.DisplayName)" -Color White -NoPrefix -NoNewline
+        Write-Log -Message " [SP Id: $($res.ResourceId)]" -Color DarkGray -NoPrefix -NoNewline
+        Write-Log -Message "  ($($res.SeenIn))" -Color DarkYellow -NoPrefix
     }
 }
 
@@ -432,25 +533,62 @@ else {
 
 Write-Step "Summary"
 
-Write-Host "`n  Period checked:                 $startIso  ->  $endIso" -ForegroundColor White
-Write-Host "  Interactive log entries:        $($interactiveLogs.Count)" -ForegroundColor White
-Write-Host "  Non-interactive log entries:    $($nonInteractiveLogs.Count)" -ForegroundColor White
-Write-Host "  Unique client apps in logs:     $($appsFromLogs.Count)" -ForegroundColor White
-Write-Host "  Unique resources in logs:       $($resourcesFromLogs.Count)" -ForegroundColor White
-Write-Host "  Existing service principals:    $($spLookup.Count)" -ForegroundColor White
+Write-Log -Message "`n  Period checked:                 $startIso  ->  $endIso" -Color White -NoPrefix
+Write-Log -Message "  Interactive log entries:        $($interactiveLogs.Count)" -Color White -NoPrefix
+Write-Log -Message "  Non-interactive log entries:    $($nonInteractiveLogs.Count)" -Color White -NoPrefix
+Write-Log -Message "  Unique client apps in logs:     $($appsFromLogs.Count)" -Color White -NoPrefix
+Write-Log -Message "  Unique resources in logs:       $($resourcesFromLogs.Count)" -Color White -NoPrefix
+Write-Log -Message "  Existing service principals:    $($spLookup.Count)" -Color White -NoPrefix
 
 if ($missingApps.Count -gt 0) {
-    Write-Host "  Missing client app SPs:         $($missingApps.Count)" -ForegroundColor Red
+    Write-Log -Message "  Missing client app SPs:         $($missingApps.Count)" -Level ERROR -NoPrefix
 }
 else {
-    Write-Host "  Missing client app SPs:         0" -ForegroundColor Green
+    Write-Log -Message "  Missing client app SPs:         0" -Level SUCCESS -NoPrefix
 }
 
 if ($missingResources.Count -gt 0) {
-    Write-Host "  Missing resource SPs:           $($missingResources.Count)" -ForegroundColor Red
+    Write-Log -Message "  Missing resource SPs:           $($missingResources.Count)" -Level ERROR -NoPrefix
 }
 else {
-    Write-Host "  Missing resource SPs:           0" -ForegroundColor Green
+    Write-Log -Message "  Missing resource SPs:           0" -Level SUCCESS -NoPrefix
+}
+
+#endregion
+
+#region Export
+
+if ($ExportPath) {
+    $exportRows = [System.Collections.Generic.List[object]]::new()
+    foreach ($app in $missingApps) {
+        $exportRows.Add([PSCustomObject]@{
+            Type        = 'ClientApp'
+            Id          = $app.AppId
+            DisplayName = $app.DisplayName
+            SeenIn      = $app.SeenIn
+        })
+    }
+    foreach ($res in $missingResources) {
+        $exportRows.Add([PSCustomObject]@{
+            Type        = 'Resource'
+            Id          = $res.ResourceId
+            DisplayName = $res.DisplayName
+            SeenIn      = $res.SeenIn
+        })
+    }
+
+    try {
+        if ($ExportPath -match '\.json$') {
+            $exportRows | ConvertTo-Json -Depth 3 | Out-File -FilePath $ExportPath -Encoding UTF8
+        }
+        else {
+            $exportRows | Export-Csv -Path $ExportPath -NoTypeInformation -Encoding UTF8
+        }
+        Write-Log -Message "`n[INFORMATION]  Results exported to: $ExportPath" -Color Cyan -NoPrefix
+    }
+    catch {
+        Write-Error "Failed to export results to $ExportPath`: $($_.Exception.Message)"
+    }
 }
 
 #endregion
